@@ -90,22 +90,56 @@ La cámara usa **DHCP** (cambió de IP varias veces: .10 → .8); todo la resuel
 Credenciales del stream: usuario `admin`, contraseña = **código de verificación** de la
 pegatina de la cámara. URL: `rtsp://admin:<codigo>@<IP>:554/Streaming/Channels/101` (HEVC 1080p).
 
-## 🔁 Reconstruir los binarios ignorados por git
+## 🔁 Binarios ignorados por git — backup en S3 (restaurar en otra Raspberry)
 
-`lib/`, `x64root/` y los `.jar` no están en git (pesados / de terceros). Para regenerarlos:
+`lib/` (SDK Hikvision), `x64root/` (sysroot amd64 + JRE) y los `.jar` no están en git
+(pesados / de terceros / regenerables). **Una copia exacta de los que funcionan —
+incluido el jar recompilado con los arreglos de este proyecto — está respaldada en S3:**
+
+| | |
+|---|---|
+| **Bucket** | `cam-counter-rpi-artifacts-950639281773` (privado, región `us-east-1`) |
+| **Objeto** | `rtsp-enable/cam-counter-rtsp-binaries.tar.gz` (~71 MB) |
+| **Checksum** | `rtsp-enable/cam-counter-rtsp-binaries.tar.gz.sha256` |
+| **Cuenta AWS** | `950639281773` |
+| Contiene | `lib/` + `x64root/` + todos los `.jar` (activador + dependencias) |
+
+### Restaurar en una Raspberry Pi nueva (camino rápido — recomendado)
 
 ```bash
-# Dependencias del sistema
+# 0) Dependencias del sistema
+sudo apt install -y box64 qemu-user-static ffmpeg python3-opencv
+#    (y el stack de Hailo: sudo apt install -y hailo-all)
+
+# 1) Clonar este repositorio
+git clone https://github.com/jlsaco/cam-counter.git
+cd cam-counter/rtsp-enable
+
+# 2) Descargar y extraer los binarios desde S3 (requiere awscli con credenciales)
+aws s3 cp s3://cam-counter-rpi-artifacts-950639281773/rtsp-enable/cam-counter-rtsp-binaries.tar.gz .
+# (opcional) verificar integridad:
+aws s3 cp s3://cam-counter-rpi-artifacts-950639281773/rtsp-enable/cam-counter-rtsp-binaries.tar.gz.sha256 .
+sha256sum -c cam-counter-rtsp-binaries.tar.gz.sha256   # debe decir: OK
+tar xzf cam-counter-rtsp-binaries.tar.gz               # crea lib/ x64root/ *.jar
+
+# 3) Instalar el servicio (ajusta las rutas del .service a la nueva ubicación)
+sudo cp ../systemd/hailo-personas.service /etc/systemd/system/
+sudo sed -i "s|/home/pi/Documents/hailo-ezviz-personas|$(cd .. && pwd)|g" /etc/systemd/system/hailo-personas.service
+sudo systemctl daemon-reload && sudo systemctl enable --now hailo-personas
+```
+
+> ⚠️ El archivo `systemd/hailo-personas.service` tiene rutas absolutas a
+> `/home/pi/Documents/hailo-ezviz-personas`. Si clonas en otra ruta, ajústalas (el `sed`
+> de arriba lo hace). Los scripts `*.sh` ya derivan su ubicación solos.
+
+### Reconstruir desde cero (sin el backup S3)
+
+```bash
 sudo apt install -y box64 default-jdk-headless qemu-user-static
-
-# 1) Jar del activador (desde rtsp-enable/, con el código en src/)
-cd rtsp-enable && ./gradlew --no-daemon jar collectDeps
-
-# 2) SDK nativo Hikvision (lib/): del proyecto base ylemoigne/ezviz-enable-rtsp
-#    git clone https://github.com/ylemoigne/ezviz-enable-rtsp  → copiar su carpeta lib/
-
-# 3) Sysroot amd64 + JRE x86-64 (x64root/): ver pasos en docs/HALLAZGOS.md
-#    (dpkg-deb -x de libc6/libstdc++6/zlib1g amd64 + JRE Temurin 21 x64)
+cd rtsp-enable && ./gradlew --no-daemon jar collectDeps    # jar + deps (desde src/)
+# lib/  -> de https://github.com/ylemoigne/ezviz-enable-rtsp (su carpeta lib/)
+# x64root/ -> dpkg-deb -x de libc6/libstdc++6/zlib1g:amd64 + JRE Temurin 21 x64
+#             (pasos detallados en docs/HALLAZGOS.md)
 ```
 
 ## 🙌 Créditos
