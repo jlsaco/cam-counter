@@ -90,6 +90,18 @@ La cámara usa **DHCP** (cambió de IP varias veces: .10 → .8); todo la resuel
 Credenciales del stream: usuario `admin`, contraseña = **código de verificación** de la
 pegatina de la cámara. URL: `rtsp://admin:<codigo>@<IP>:554/Streaming/Channels/101` (HEVC 1080p).
 
+### ⚙️ Valores fijados a ESTA cámara (editar si cambias de cámara)
+
+Esta instalación está configurada para **esta** cámara concreta. Si conectas **otra**, edita
+estos dos valores en `rtsp-enable/start_detection.sh` **y** `rtsp-enable/rtsp_enable_final.sh`:
+
+| Valor | Actual | Qué es | Dónde se obtiene en otra cámara |
+|---|---|---|---|
+| Código de verificación | `RWCHBY` | contraseña de `admin` para SDK/RTSP | pegatina de la cámara |
+| MAC | `ac:1c:26` | para resolver la IP por DHCP | `arp`/router, o la etiqueta |
+
+(Para la **misma** cámara en otra Raspberry, estos valores no cambian — funciona tal cual.)
+
 ## 🔁 Binarios ignorados por git — backup en S3 (restaurar en otra Raspberry)
 
 `lib/` (SDK Hikvision), `x64root/` (sysroot amd64 + JRE) y los `.jar` no están en git
@@ -108,8 +120,11 @@ incluido el jar recompilado con los arreglos de este proyecto — está respalda
 
 ```bash
 # 0) Dependencias del sistema
-sudo apt install -y box64 qemu-user-static ffmpeg python3-opencv
-#    (y el stack de Hailo: sudo apt install -y hailo-all)
+sudo apt update
+sudo apt install -y box64 qemu-user-static ffmpeg python3-opencv python3-numpy awscli
+sudo apt install -y hailo-all          # driver Hailo + HailoRT + Python API + modelos
+hailortcli fw-control identify         # comprobar: debe responder "Hailo-8"
+#    (si NO aparece /dev/hailo0:  sudo modprobe hailo_pci   — o reiniciar la Pi)
 
 # 1) Clonar este repositorio
 git clone https://github.com/jlsaco/cam-counter.git
@@ -126,11 +141,37 @@ tar xzf cam-counter-rtsp-binaries.tar.gz               # crea lib/ x64root/ *.ja
 sudo cp ../systemd/hailo-personas.service /etc/systemd/system/
 sudo sed -i "s|/home/pi/Documents/hailo-ezviz-personas|$(cd .. && pwd)|g" /etc/systemd/system/hailo-personas.service
 sudo systemctl daemon-reload && sudo systemctl enable --now hailo-personas
+
+# 4) VERIFICAR que quedó funcionando
+sleep 15                                                   # dar tiempo a resolver cámara + activar RTSP + cargar Hailo
+systemctl is-active hailo-personas                         # -> active
+curl -s -o /dev/null -w "MJPEG HTTP %{http_code}\n" http://localhost:8080/   # -> 200
+#    y abre en un navegador:  http://<IP-de-la-Pi>:8080/   (deberías ver el vídeo con las cajas)
+sudo journalctl -u hailo-personas -n 20 --no-pager         # si algo falla, aquí está el porqué
 ```
 
 > ⚠️ El archivo `systemd/hailo-personas.service` tiene rutas absolutas a
 > `/home/pi/Documents/hailo-ezviz-personas`. Si clonas en otra ruta, ajústalas (el `sed`
 > de arriba lo hace). Los scripts `*.sh` ya derivan su ubicación solos.
+
+### ✅ Probar los componentes por separado (diagnóstico)
+
+Si el despliegue falla, prueba cada pieza de forma aislada para localizar el problema:
+
+```bash
+# A) ¿El Hailo funciona? (no necesita cámara — corre YOLO sobre una imagen de prueba)
+python3 detection/test_hailo_person.py            # debe imprimir nº de personas detectadas
+hailortcli fw-control identify                    # debe responder "Hailo-8"
+
+# B) ¿La cámara está y se le activa el RTSP?
+bash rtsp-enable/rtsp_enable_final.sh             # debe terminar en "RTSP activado en <IP>"
+
+# C) ¿El stream RTSP entrega vídeo? (usa la IP que reportó el paso B, en rtsp-enable/CAM_IP)
+ffprobe -rtsp_transport tcp "rtsp://admin:RWCHBY@$(cat rtsp-enable/CAM_IP):554/Streaming/Channels/101"
+
+# D) ¿La detección corre en primer plano? (para ver errores directamente)
+bash rtsp-enable/start_detection.sh               # Ctrl-C para parar; busca "RTSP abierto"
+```
 
 ### Reconstruir desde cero (sin el backup S3)
 
