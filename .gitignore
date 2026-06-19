@@ -1,0 +1,29 @@
+# ───── Binarios pesados / regenerables (se quedan en disco, fuera de git) ─────
+
+# Sysroot amd64 + JRE x86-64 para box64 (~175 MB) — se reconstruye (ver README)
+rtsp-enable/x64root/
+
+# SDK nativo Hikvision x86-64 (~26 MB, binarios de terceros)
+rtsp-enable/lib/
+
+# Artefactos descargados / construidos (regenerables con gradle / apt / curl)
+rtsp-enable/*.jar
+rtsp-enable/jre-x64.tar.gz
+rtsp-enable/*.deb
+rtsp-enable/.build.gradle/
+rtsp-enable/.gradle/
+
+# ───── Runtime / estado / logs ─────
+rtsp-enable/sdklog/
+rtsp-enable/CAM_IP
+rtsp-enable/RTSP_URL
+rtsp-enable/*.flag
+rtsp-enable/*.log
+*.log
+
+# ───── Python ─────
+__pycache__/
+*.pyc
+
+# ───── Misc ─────
+*.tmp
