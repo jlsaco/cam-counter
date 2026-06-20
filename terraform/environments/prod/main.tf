@@ -18,3 +18,34 @@
 module "state_backend" {
   source = "../../modules/state-backend"
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR03 — Proveedor OIDC de GitHub Actions + DOS roles IAM SEPARADOS (plan/deploy).
+#
+# CI asume el rol `plan` (SOLO LECTURA) vía OIDC; el `apply` de infra lo hace el
+# RUNNER MAD con las credenciales de su entorno (F2). El rol `deploy` queda creado
+# para operación futura (release/promote → OBJETOS S3, que NO es apply de infra).
+#
+# Los nombres del state remoto se referencian desde el módulo state-backend para
+# acotar la política de SOLO LECTURA del rol plan al state/lock REALES.
+# Tags lógicos minúscula (F3) además de los default_tags capitalizados de la raíz.
+# ─────────────────────────────────────────────────────────────────────────────
+module "iam_github_oidc" {
+  source = "../../modules/iam-github-oidc"
+
+  github_org  = "jlsaco"
+  github_repo = "cam-counter"
+
+  # El proveedor OIDC NO existe aún en la cuenta → lo crea este módulo. Si en el
+  # futuro existiera fuera del state, resolver de forma PERSISTENTE (import al
+  # state o create_oidc_provider=false + oidc_provider_arn aquí), NO por CLI.
+  create_oidc_provider = true
+
+  tfstate_bucket_name     = module.state_backend.state_bucket_name
+  tfstate_lock_table_name = module.state_backend.lock_table_name
+
+  tags = {
+    project    = "cam-counter"
+    managed_by = "mad-runner"
+  }
+}
