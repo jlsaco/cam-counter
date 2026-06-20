@@ -1,0 +1,94 @@
+name: ci
+
+# CI de cam-counter.
+#
+# IMPORTANTE — POLÍTICA DE INFRA (ver CLAUDE.md §5/§6):
+#   El CI de Terraform es SOLO-PLAN: `fmt -check`, `validate` (con -backend=false) y
+#   `tflint`. NO usa credenciales AWS, NO ejecuta apply/plan. El `apply` real lo hace el
+#   RUNNER MAD de forma autónoma fuera del CI. Esto cierra la escalada de privilegios
+#   desde PRs no confiables (F2).
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  # Detecta qué áreas cambió el PR para activar selectivamente el job de terraform.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      terraform: ${{ steps.filter.outputs.terraform }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            terraform:
+              - 'terraform/**'
+              - '.github/workflows/ci.yml'
+
+  # Validación estática de Terraform. SIN credenciales AWS. SIN apply ni plan.
+  terraform:
+    needs: changes
+    if: ${{ needs.changes.outputs.terraform == 'true' }}
+    runs-on: ubuntu-latest
+    # Sin `permissions: id-token` y sin credenciales AWS: este job NO toca AWS real.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.5"
+          terraform_wrapper: false
+
+      - name: Formato (fmt -check)
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Módulo state-backend — init (-backend=false) + validate
+        run: |
+          terraform -chdir=terraform/modules/state-backend init -backend=false
+          terraform -chdir=terraform/modules/state-backend validate
+
+      - name: Raíz prod — init (-backend=false) + validate
+        run: |
+          terraform -chdir=terraform/environments/prod init -backend=false
+          terraform -chdir=terraform/environments/prod validate
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: tflint — init plugins
+        run: tflint --chdir=terraform --init
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: tflint — módulo y raíz
+        run: |
+          tflint --chdir=terraform/modules/state-backend
+          tflint --chdir=terraform/environments/prod
+
+  # Escaneo de secretos SÓLO sobre el working-tree del PR (no historia), según política
+  # PR00b: la historia pre-rotación contiene el código de cámara ya QUEMADO/ROTADO y
+  # escanearla dejaría el job rojo permanentemente. Ver .gitleaks.toml.
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Corremos el binario oficial de gitleaks vía su imagen Docker en modo
+      # `detect --no-git` (working-tree, NO historia). NO usamos la action por defecto de
+      # gitleaks porque escanea toda la historia (git log -p), donde el código de cámara
+      # ya rotado seguiría presente y dejaría el job rojo permanentemente (ver .gitleaks.toml).
+      - name: gitleaks detect (working-tree, sin historia)
+        uses: docker://zricethezav/gitleaks:v8.30.1
+        with:
+          args: detect --no-git --source /github/workspace --config /github/workspace/.gitleaks.toml --redact --verbose
