@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cam-counter-edge"
+# Versión placeholder estática: la versión REAL del producto se deriva de tags git
+# SemVer anotados vía scripts/version.py (sin archivo VERSION commiteado, sin tags aquí).
+version = "0.0.0"
+description = "Conteo de personas en el borde (edge-first) para cam-counter: Detector(Hailo) + DummyDetector + tipos + validación de slugs."
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+# Dependencias mínimas para x86 SIN Hailo. hailo_platform NO se declara: es un binario
+# del Pi, NO existe en PyPI; el Detector lo importa de forma perezosa. opencv-python NO
+# es dependencia de los tests puros (solo lo usa Detector.detect en el Pi, lazy-import).
+dependencies = [
+  "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "ruff>=0.4",
+]
+
+[tool.setuptools]
+# Layout plano: el paquete de import es exactamente cam_counter_edge (no 'counter').
+packages = ["cam_counter_edge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Acotar ruff al código del paquete y sus tests (no toca el resto del monorepo).
+include = ["cam_counter_edge/**/*.py", "tests/**/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]

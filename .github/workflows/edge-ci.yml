@@ -1,0 +1,43 @@
+name: edge-ci
+
+# CI del paquete de borde cam_counter_edge. Corre en x86 (ubuntu-latest) SIN Hailo, sin
+# cámara y sin red: instala el paquete y ejecuta ruff + pytest. El acoplamiento a Hailo
+# está aislado en Detector con import perezoso, así que todo es verificable en x86.
+on:
+  push:
+    paths:
+      - "v1/edge/**"
+      - ".github/workflows/edge-ci.yml"
+  pull_request:
+    paths:
+      - "v1/edge/**"
+      - ".github/workflows/edge-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  edge:
+    name: edge (ruff + pytest, x86 sin Hailo)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: v1/edge
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package + dev tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests (pytest, sin hardware)
+        run: python -m pytest -q

@@ -1,0 +1,8 @@
+# Dependencias mínimas de runtime/CI del paquete cam_counter_edge en x86 (sin Hailo).
+# La fuente de verdad de dependencias es pyproject.toml; este fichero es un espejo de
+# conveniencia para `pip install -r`.
+#
+# NOTA: `hailo_platform` NO se lista aquí ni en pyproject: es un binario SOLO del Pi, no
+# existe en PyPI y el Detector lo importa de forma PEREZOSA. `opencv-python` tampoco es
+# dependencia de los tests (solo lo usa Detector.detect en el Pi, con import perezoso).
+numpy>=1.24
