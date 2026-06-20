@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cam-counter-edge"
+version = "0.0.0"
+description = "Subsistema de conteo de personas en el borde (Raspberry Pi 5 + Hailo-8) del monorepo cam-counter."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "jlsaco" }]
+# Dependencias mínimas para x86 SIN Hailo. NO se declara `hailo_platform`:
+# no existe en PyPI (es un binario del Pi) y se importa de forma perezosa.
+dependencies = [
+  "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "ruff>=0.4",
+]
+
+[tool.setuptools]
+# Layout plano: el paquete importable es `cam_counter_edge`. `tests/` queda fuera.
+packages = ["cam_counter_edge"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["cam_counter_edge", "tests"]
+
+[tool.ruff.lint]
+# Reglas razonables: errores pyflakes/pycodestyle, imports ordenados (I),
+# upgrades de sintaxis (UP), bugbear (B) y un subconjunto de pylint (PL*).
+select = ["E", "F", "I", "W", "UP", "B", "PLC0415"]
+
+[tool.ruff.lint.isort]
+# El paquete es first-party aunque esté instalado en modo editable en CI.
+known-first-party = ["cam_counter_edge"]

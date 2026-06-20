@@ -30,6 +30,14 @@ v1/rtsp-enable/*.log
 # ───── Python ─────
 __pycache__/
 *.pyc
+*.egg-info/
+.eggs/
+build/
+.pytest_cache/
+.ruff_cache/
+# Entornos virtuales locales (la verificación usa un venv efímero).
+.venv/
+venv/
 
 # ───── Terraform ─────
 **/.terraform/

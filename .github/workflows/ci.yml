@@ -18,11 +18,12 @@ permissions:
   contents: read
 
 jobs:
-  # Detecta qué áreas cambió el PR para activar selectivamente el job de terraform.
+  # Detecta qué áreas cambió el PR para activar selectivamente los jobs.
   changes:
     runs-on: ubuntu-latest
     outputs:
       terraform: ${{ steps.filter.outputs.terraform }}
+      edge: ${{ steps.filter.outputs.edge }}
     steps:
       - uses: actions/checkout@v4
       - id: filter
@@ -32,6 +33,39 @@ jobs:
             terraform:
               - 'terraform/**'
               - '.github/workflows/ci.yml'
+            edge:
+              - 'v1/edge/**'
+              - '.github/workflows/ci.yml'
+
+  # Paquete edge `cam_counter_edge`: lint + tests en x86 SIN Hailo, SIN cámara,
+  # SIN red. El Detector importa `hailo_platform` de forma PEREZOSA y el
+  # DummyDetector cubre la lógica de conteo en CI. (No toca AWS.)
+  edge:
+    needs: changes
+    if: ${{ needs.changes.outputs.edge == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar paquete edge (x86, sin Hailo)
+        run: python -m pip install -e "v1/edge[dev]"
+
+      - name: Import sanity (sin hailo_platform instalado)
+        run: |
+          python -c "import cam_counter_edge.detector, cam_counter_edge.types, cam_counter_edge.dummy, cam_counter_edge.identifiers; print('imports OK')"
+
+      - name: Ruff (lint)
+        working-directory: v1/edge
+        run: ruff check .
+
+      - name: Pytest (sin hardware)
+        working-directory: v1/edge
+        run: python -m pytest -q
 
   # Validación estática de Terraform. SIN credenciales AWS. SIN apply ni plan.
   terraform:

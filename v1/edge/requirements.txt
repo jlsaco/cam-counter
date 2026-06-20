@@ -1,0 +1,11 @@
+# Dependencias mínimas del paquete cam_counter_edge para x86 SIN Hailo (CI).
+#
+# IMPORTANTE: `hailo_platform` NO se lista aquí. No existe en PyPI (es un binario
+# del Raspberry Pi) y el Detector lo importa de forma PEREZOSA; en x86/CI se usa
+# DummyDetector. Lo mismo aplica a OpenCV (cv2): sólo lo necesita el Detector
+# real en el Pi, se importa perezosamente y los tests no dependen de él.
+numpy>=1.24
+
+# Herramientas de desarrollo/CI (o instala el extra: `pip install -e v1/edge[dev]`).
+pytest>=7
+ruff>=0.4
