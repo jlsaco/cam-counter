@@ -6,6 +6,10 @@ BASE=/home/pi/ezviz_rtsp
 LOG=$BASE/reboot_watcher.log
 MAC="ac:1c:26"
 
+# Credencial por entorno $CAM_PASS o fichero gitignored rtsp-enable/CAM_PASS (sin literal).
+source "$(dirname "$0")/../_lib_credentials.sh"
+CAM_PASS="$(resolve_cam_pass)" || exit 1
+
 find_ip(){ for i in $(seq 1 254); do ping -c1 -W1 192.168.1.$i >/dev/null 2>&1 & done; wait
            ip neigh | grep -i "$MAC" | grep -oE '192\.168\.1\.[0-9]+' | head -1; }
 up(){ local ip="$1"; [ -n "$ip" ] && timeout 2 bash -c "echo >/dev/tcp/$ip/8000" 2>/dev/null; }
@@ -36,7 +40,7 @@ sleep 20
 echo "$(date) disparando login+PUT en $CAM" >> "$LOG"
 export EZVIZ_LOGINMODE=0 EZVIZ_HTTPS=0
 export EZVIZ_PROBE_LIST=$'PUT /ISAPI/EZVIZ/IPC/System/servicesSwitch?format=json|||{"servicesSwitch":{"rtsp":1,"upnp":1,"web":1,"hiksdk":1}}\nGET /ISAPI/EZVIZ/IPC/System/servicesSwitch?format=json'
-bash "$BASE/enable_rtsp_now.sh" "$CAM" 8000 admin RWCHBY >> "$LOG" 2>&1
+bash "$BASE/enable_rtsp_now.sh" "$CAM" 8000 admin "$CAM_PASS" >> "$LOG" 2>&1
 sleep 3
 if timeout 3 bash -c "echo >/dev/tcp/$CAM/554" 2>/dev/null; then
   echo "$(date) ✅✅✅ RTSP ACTIVADO en $CAM:554" >> "$LOG"
@@ -44,7 +48,7 @@ if timeout 3 bash -c "echo >/dev/tcp/$CAM/554" 2>/dev/null; then
 fi
 echo "$(date) primer intento sin éxito; reintentando UNA vez tras 15s" >> "$LOG"
 sleep 15
-bash "$BASE/enable_rtsp_now.sh" "$CAM" 8000 admin RWCHBY >> "$LOG" 2>&1
+bash "$BASE/enable_rtsp_now.sh" "$CAM" 8000 admin "$CAM_PASS" >> "$LOG" 2>&1
 sleep 3
 if timeout 3 bash -c "echo >/dev/tcp/$CAM/554" 2>/dev/null; then
   echo "$(date) ✅✅✅ RTSP ACTIVADO en $CAM:554 (2º intento)" >> "$LOG"

@@ -13,6 +13,12 @@ rtsp-enable/*.deb
 rtsp-enable/.build.gradle/
 rtsp-enable/.gradle/
 
+# ───── Credenciales (NUNCA en git) ─────
+# Código de verificación de la cámara (contraseña de admin para SDK/RTSP).
+# Se inyecta por entorno $CAM_PASS o por este fichero local; jamás versionado.
+rtsp-enable/CAM_PASS
+rtsp-enable/secrets/
+
 # ───── Runtime / estado / logs ─────
 rtsp-enable/sdklog/
 rtsp-enable/CAM_IP

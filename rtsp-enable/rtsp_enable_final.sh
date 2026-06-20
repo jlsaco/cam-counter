@@ -10,6 +10,8 @@ if timeout 3 bash -c "echo >/dev/tcp/$CAM/554" 2>/dev/null; then
 fi
 export EZVIZ_LOGINMODE=0 EZVIZ_HTTPS=0 EZVIZ_LOGIN_RETRIES=20 EZVIZ_BODY_IN_URL=1
 export EZVIZ_PROBE_LIST=$'PUT /ISAPI/EZVIZ/IPC/System/servicesSwitch?format=json|||{"servicesSwitch":{"rtsp":1,"upnp":1,"web":1,"hiksdk":1}}'
-bash "$BASE/enable_rtsp_now.sh" "$CAM" 8000 admin RWCHBY
+# La credencial la resuelve enable_rtsp_now.sh por entorno $CAM_PASS o fichero gitignored
+# (rtsp-enable/CAM_PASS); no se pasa ningún literal por argumento.
+bash "$BASE/enable_rtsp_now.sh" "$CAM" 8000 admin
 sleep 2
 timeout 3 bash -c "echo >/dev/tcp/$CAM/554" 2>/dev/null && echo "$(date) RTSP activado en $CAM" || echo "$(date) no se pudo activar"

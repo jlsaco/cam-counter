@@ -4,10 +4,18 @@
 # Operación local por el puerto 8000 (login admin + setServiceSwitch rtsp=1). Sin nube.
 set -e
 
+# Credencial por entorno $CAM_PASS o fichero gitignored rtsp-enable/CAM_PASS (sin literal).
+source "$(dirname "$0")/../_lib_credentials.sh"
+
 CAM_IP="${1:-192.168.1.10}"
 CAM_PORT="${2:-8000}"
 CAM_USER="${3:-admin}"
-CAM_PASS="${4:-RWCHBY}"
+CAM_PASS_ARG="${4:-}"
+if [ -n "$CAM_PASS_ARG" ]; then
+  CAM_PASS="$CAM_PASS_ARG"
+else
+  CAM_PASS="$(resolve_cam_pass)" || exit 1
+fi
 DIR="/home/pi/ezviz_rtsp"
 JRE_AMD64="/usr/lib/jvm/java-21-openjdk-amd64/bin/java"
 
