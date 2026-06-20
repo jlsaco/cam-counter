@@ -173,6 +173,39 @@ class LineCounter:
         )
 
     # ────────────────────────────────── geometría ──────────────────────────────
+    def set_line(self, config: LineConfig) -> None:
+        """Reconfigura la geometría EN CALIENTE desde un ``LineConfig`` (hot-reload).
+
+        Actualiza extremos ``a``/``b``, ``positive_side``, etiquetas de presentación y
+        ``line_version`` SIN reiniciar el proceso ni tocar el ``crossing_seq`` del store.
+
+        Reinicia la máquina de estado por track (``_states``) de forma DELIBERADA y
+        DOCUMENTADA: el ``committed_side`` de cada track es relativo a la línea ANTIGUA, así
+        que conservarlo provocaría un "cruce" espurio al cambiar de línea. Tras el reinicio
+        cada track vuelve a asentarse en la NUEVA línea sin contar ese reasentamiento. La
+        idempotencia global del sistema se mantiene porque el ``event_id`` se deriva del
+        ``crossing_seq`` monótono por cámara (persistido en el store), no del estado en RAM.
+
+        Args:
+            config: nueva config (su ``camera_id`` debe coincidir con el de este contador).
+        """
+        validate_camera_id(config.camera_id)
+        if config.camera_id != self.camera_id:
+            raise ValueError(
+                f"camera_id no coincide: {self.camera_id!r} vs {config.camera_id!r}"
+            )
+        if int(config.positive_side) not in (-1, 1):
+            raise ValueError(
+                f"positive_side inválido: {config.positive_side!r} (se espera +1/-1)"
+            )
+        self.a = (float(config.a[0]), float(config.a[1]))
+        self.b = (float(config.b[0]), float(config.b[1]))
+        self.positive_side = int(config.positive_side)
+        self.positive_label = config.positive_label
+        self.negative_label = config.negative_label
+        self.line_version = int(config.config_version)
+        self._states.clear()
+
     def side_of(self, point: Point) -> int:
         """Semiplano (-1/0/+1) de ``point`` respecto de la línea ``A->B`` de esta cámara."""
         return signed_side(self.a, self.b, point)
