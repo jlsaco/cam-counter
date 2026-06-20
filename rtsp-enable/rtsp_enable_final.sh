@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Activa RTSP en la cámara EZVIZ. Resuelve IP por MAC. Solo actúa si 554 está cerrado.
 BASE="$(cd "$(dirname "$0")" && pwd)"; MAC="ac:1c:26"
+# Resolver credencial (env CAM_PASS o fichero gitignored) y fallar limpio si no está.
+source "$BASE/_lib_credentials.sh"
+resolve_cam_pass || exit 1
 for i in $(seq 1 254); do ping -c1 -W1 192.168.1.$i >/dev/null 2>&1 & done; wait
 CAM=$(ip neigh | grep -i "$MAC" | grep -oE '192\.168\.1\.[0-9]+' | head -1)
 [ -z "$CAM" ] && { echo "$(date) camara no encontrada"; exit 1; }
@@ -10,6 +13,6 @@ if timeout 3 bash -c "echo >/dev/tcp/$CAM/554" 2>/dev/null; then
 fi
 export EZVIZ_LOGINMODE=0 EZVIZ_HTTPS=0 EZVIZ_LOGIN_RETRIES=20 EZVIZ_BODY_IN_URL=1
 export EZVIZ_PROBE_LIST=$'PUT /ISAPI/EZVIZ/IPC/System/servicesSwitch?format=json|||{"servicesSwitch":{"rtsp":1,"upnp":1,"web":1,"hiksdk":1}}'
-bash "$BASE/enable_rtsp_now.sh" "$CAM" 8000 admin RWCHBY
+bash "$BASE/enable_rtsp_now.sh" "$CAM" 8000 admin "$CAM_PASS"
 sleep 2
 timeout 3 bash -c "echo >/dev/tcp/$CAM/554" 2>/dev/null && echo "$(date) RTSP activado en $CAM" || echo "$(date) no se pudo activar"

@@ -1,0 +1,91 @@
+# .gitleaks.toml — política de detección de secretos de cam-counter
+# ------------------------------------------------------------------
+# Objetivo: impedir que vuelva a entrar en git un secreto como el código de
+# verificación / password de la cámara (que se incrustaba en URLs `rtsp://admin:PASS@...`
+# y en defaults `CAM_PASS="${4:-PASS}"`). La credencial real se inyecta SIEMPRE por
+# entorno (CAM_PASS) o por el fichero gitignored `rtsp-enable/CAM_PASS` (ver README).
+#
+# Modo de uso (lo que también correrá el futuro gate de CI):
+#   gitleaks detect  --no-git --source . --config .gitleaks.toml   # working tree
+#   gitleaks protect --staged          --config .gitleaks.toml     # diff staged (pre-commit)
+# Ambos escanean el ÁRBOL DE TRABAJO / DIFF, NO el historial (ver "Decisión de historia").
+
+title = "cam-counter gitleaks policy"
+
+# Hereda el ruleset por defecto de gitleaks (AWS keys, tokens genéricos, claves privadas…)
+# y le añadimos las reglas específicas del producto definidas abajo.
+[extend]
+useDefault = true
+
+# --------------------------------------------------------------------------------------
+# Decisión de historia (NO reescribir):
+#   Se CONSERVA la historia de git (no se usa `git filter-repo` ni `filter-branch`) para
+#   preservar los SHAs y la promesa de `--follow` de la futura migración del árbol a `v1/`
+#   (PR01). El secreto que vivió en commits anteriores está ROTADO/INVÁLIDO (factory-reset
+#   es la única recuperación del SDK Hikvision), por lo que su presencia histórica es
+#   inocua. Por eso este gate escanea SOLO working tree / diff (`--no-git` / `--staged`),
+#   no `--log`. Si en algún momento se decidiera escanear TODO el historial, hay un
+#   allowlist de historia documentado y COMENTADO al final de este fichero.
+# --------------------------------------------------------------------------------------
+
+# Regla específica: credencial incrustada en una URL RTSP (`rtsp://usuario:PASSWORD@host`).
+# Captura SOLO el grupo de la contraseña (secretGroup = 1). Las formas parametrizadas y de
+# documentación NO casan porque el password empieza por un carácter no alfanumérico:
+#   rtsp://admin:${CAM_PASS}@...   -> empieza por '$'  -> no casa
+#   rtsp://admin:<CODIGO>@...      -> empieza por '<'  -> no casa
+# Un literal real como rtsp://admin:Algo123@... SÍ casa y es bloqueado.
+[[rules]]
+id = "cam-counter-rtsp-url-credential"
+description = "Contraseña hardcodeada en una URL RTSP (usa CAM_PASS por env/fichero)"
+regex = '''rtsp://[^\s:/@]+:([A-Za-z0-9][^\s@]{2,})@'''
+secretGroup = 1
+keywords = ["rtsp://"]
+
+  # Placeholders de documentación: no son secretos reales.
+  [rules.allowlist]
+  regexTarget = "match"
+  regexes = [
+    '''(?i)rtsp://[^\s:/@]+:(codigo|<codigo>|password|placeholder|example|changeme|redacted|dummy|prueba[0-9]*)@''',
+  ]
+
+# Regla específica: valor por defecto literal de la credencial en un script
+# (p.ej. el viejo `CAM_PASS="${4:-PASS}"`). Las formas correctas (sin default literal,
+# `CAM_PASS="$4"` o `"${4:-}"` con default vacío) NO casan.
+[[rules]]
+id = "cam-counter-cam-pass-literal-default"
+description = "Default literal para CAM_PASS en un script (debe resolverse por env/fichero)"
+regex = '''CAM_PASS\s*=\s*"?\$\{[0-9]+:-[^}"\s]+\}'''
+keywords = ["CAM_PASS"]
+
+# --------------------------------------------------------------------------------------
+# Allowlist global del repositorio.
+# --------------------------------------------------------------------------------------
+[allowlist]
+description = "Rutas vendorizadas / binarios / ficheros de credencial local (no escanear)"
+paths = [
+  # Binarios de terceros y sysroot (gitignored; en el Pi existen en disco y `--no-git`
+  # recorre el filesystem, así que se excluyen explícitamente).
+  '''rtsp-enable/lib/''',
+  '''rtsp-enable/x64root/''',
+  '''.*\.jar$''',
+  # Credencial LOCAL gitignored: nunca versionada, pero existe en el Pi; no escanearla.
+  '''rtsp-enable/CAM_PASS$''',
+  '''rtsp-enable/secrets/''',
+]
+
+# --------------------------------------------------------------------------------------
+# Allowlist de HISTORIA (COMENTADO a propósito).
+# Solo necesario si algún día se ejecutara `gitleaks detect` SOBRE EL HISTORIAL completo
+# (modo con git, no `--no-git`). Documenta que el secreto de los commits anteriores a esta
+# remediación está ROTADO/INVÁLIDO y debe ignorarse. Se deja COMENTADO porque el gate por
+# defecto escanea solo working tree / diff (ver "Decisión de historia" arriba) y porque
+# no queremos materializar el literal rotado en un fichero versionado.
+#
+# [[rules.allowlist]]  # (asociar a las reglas que aplique, o usar [allowlist].commits)
+#   description = "Secreto histórico de la cámara, ya rotado e inválido (pre-remediación)"
+#   commits = [
+#     # "<sha-del-commit-historico-con-el-secreto>",
+#   ]
+#   # Alternativamente, allowlistar por regex el valor rotado concreto si se reintroduce
+#   # SOLO en el historial. No se incluye el literal aquí para mantener cero secretos en git.
+# --------------------------------------------------------------------------------------

@@ -4,16 +4,21 @@
 # Operación 100% local por el puerto 8000 (login admin + setServiceSwitch rtsp=1).
 #
 #   Uso:  bash enable_rtsp_now.sh [IP] [PUERTO] [USUARIO] [PASSWORD] [intervalo_seg]
-#   Por defecto: 192.168.1.10 8000 admin RWCHBY  (one-shot)
+#   Por defecto: 192.168.1.10 8000 admin <CAM_PASS>  (one-shot)
+#   La contraseña (4º arg) es OPCIONAL: si no se pasa, se resuelve por env CAM_PASS o
+#   por el fichero gitignored rtsp-enable/CAM_PASS. NUNCA hay un literal por defecto.
 #   Con un 5º arg (p.ej. 30) corre como demonio: revisa el 554 y lo reactiva.
 set -e
 cd "$(dirname "$0")"
 BASE="$(pwd)"
+source "$BASE/_lib_credentials.sh"
 
 CAM_IP="${1:-192.168.1.10}"
 CAM_PORT="${2:-8000}"
 CAM_USER="${3:-admin}"
-CAM_PASS="${4:-RWCHBY}"
+# 4º arg opcional: password explicito. Si no se da, se resuelve por env/fichero.
+if [ -n "${4:-}" ]; then CAM_PASS="$4"; fi
+resolve_cam_pass || exit 1
 INTERVAL="${5:-}"
 
 CP=""; for j in "$BASE"/*.jar; do CP="$CP:$j"; done; CP="${CP#:}"

@@ -97,10 +97,21 @@ estos dos valores en `rtsp-enable/start_detection.sh` **y** `rtsp-enable/rtsp_en
 
 | Valor | Actual | Qué es | Dónde se obtiene en otra cámara |
 |---|---|---|---|
-| Código de verificación | `RWCHBY` | contraseña de `admin` para SDK/RTSP | pegatina de la cámara |
+| Código de verificación | `<CODIGO>` (aportado por `CAM_PASS`) | contraseña de `admin` para SDK/RTSP | pegatina de la cámara |
 | MAC | `ac:1c:26` | para resolver la IP por DHCP | `arp`/router, o la etiqueta |
 
-(Para la **misma** cámara en otra Raspberry, estos valores no cambian — funciona tal cual.)
+(Para la **misma** cámara en otra Raspberry, la MAC no cambia; la credencial se aporta igual por `CAM_PASS`.)
+
+> 🔐 **Credencial de la cámara (`CAM_PASS`).** El código de verificación es un secreto y
+> **no** se versiona en el repo. Apórtalo de una de estas dos formas (los scripts lo
+> resuelven con esta prioridad):
+> 1. **Entorno (recomendado):** `export CAM_PASS='tu-codigo'` antes de lanzar los scripts.
+> 2. **Fichero local (gitignored):** `echo 'tu-codigo' > rtsp-enable/CAM_PASS`.
+>
+> Si no hay credencial, los scripts fallan con un mensaje claro (no usan ningún valor por
+> defecto). El antiguo código de verificación que apareció en el historial de git está
+> **ROTADO/INVÁLIDO** (el factory-reset es la única vía de recuperación del SDK Hikvision),
+> así que en cualquier caso usarás una credencial nueva.
 
 ## 🔁 Binarios ignorados por git — backup en S3 (restaurar en otra Raspberry)
 
@@ -167,7 +178,8 @@ hailortcli fw-control identify                    # debe responder "Hailo-8"
 bash rtsp-enable/rtsp_enable_final.sh             # debe terminar en "RTSP activado en <IP>"
 
 # C) ¿El stream RTSP entrega vídeo? (usa la IP que reportó el paso B, en rtsp-enable/CAM_IP)
-ffprobe -rtsp_transport tcp "rtsp://admin:RWCHBY@$(cat rtsp-enable/CAM_IP):554/Streaming/Channels/101"
+export CAM_PASS='tu-codigo'   # o: echo 'tu-codigo' > rtsp-enable/CAM_PASS  (ver nota de credenciales arriba)
+ffprobe -rtsp_transport tcp "rtsp://admin:${CAM_PASS}@$(cat rtsp-enable/CAM_IP):554/Streaming/Channels/101"
 
 # D) ¿La detección corre en primer plano? (para ver errores directamente)
 bash rtsp-enable/start_detection.sh               # Ctrl-C para parar; busca "RTSP abierto"

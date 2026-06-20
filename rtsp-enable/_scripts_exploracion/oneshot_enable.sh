@@ -6,6 +6,10 @@ LOG=$BASE/oneshot.log
 MAC="ac:1c:26"
 WAIT="${1:-2000}"
 
+# Resolver credencial (env CAM_PASS o fichero gitignored rtsp-enable/CAM_PASS); sin literal.
+source "$(cd "$(dirname "$0")" && pwd)/../_lib_credentials.sh"
+resolve_cam_pass || exit 1
+
 echo "$(date) esperando ${WAIT}s en silencio para que expire el lockout..." > "$LOG"
 sleep "$WAIT"
 
@@ -21,7 +25,7 @@ fi
 
 export EZVIZ_LOGINMODE=0 EZVIZ_HTTPS=0
 export EZVIZ_PROBE_LIST=$'PUT /ISAPI/EZVIZ/IPC/System/servicesSwitch?format=json|||{"servicesSwitch":{"rtsp":1,"upnp":1,"web":1,"hiksdk":1}}\nGET /ISAPI/EZVIZ/IPC/System/servicesSwitch?format=json'
-bash "$BASE/enable_rtsp_now.sh" "$IP" 8000 admin RWCHBY >> "$LOG" 2>&1
+bash "$BASE/enable_rtsp_now.sh" "$IP" 8000 admin "$CAM_PASS" >> "$LOG" 2>&1
 sleep 3
 if timeout 3 bash -c "echo >/dev/tcp/$IP/554" 2>/dev/null; then
   echo "$(date) ✅ RTSP ACTIVADO (554 abierto) en $IP" >> "$LOG"

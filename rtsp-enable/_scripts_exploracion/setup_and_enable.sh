@@ -3,11 +3,15 @@
 # Usa el SDK nativo Hikvision (x86-64) ejecutado vía qemu-user-static sobre ARM64.
 # Operación local por el puerto 8000 (login admin + setServiceSwitch rtsp=1). Sin nube.
 set -e
+# Resolver credencial (env CAM_PASS o fichero gitignored rtsp-enable/CAM_PASS); sin literal.
+source "$(cd "$(dirname "$0")" && pwd)/../_lib_credentials.sh"
 
 CAM_IP="${1:-192.168.1.10}"
 CAM_PORT="${2:-8000}"
 CAM_USER="${3:-admin}"
-CAM_PASS="${4:-RWCHBY}"
+# 4º arg opcional: password explicito. Si no se da, se resuelve por env/fichero.
+if [ -n "${4:-}" ]; then CAM_PASS="$4"; fi
+resolve_cam_pass || exit 1
 DIR="/home/pi/ezviz_rtsp"
 JRE_AMD64="/usr/lib/jvm/java-21-openjdk-amd64/bin/java"
 

@@ -21,6 +21,12 @@ rtsp-enable/*.flag
 rtsp-enable/*.log
 *.log
 
+# ───── Secretos LOCALES (NUNCA en git) ─────
+# Credencial de la cámara (código de verificación). Se inyecta por env CAM_PASS o por
+# este fichero local; en el futuro vendrá de SSM/Secrets Manager. Cero secretos en git.
+rtsp-enable/CAM_PASS
+rtsp-enable/secrets/
+
 # ───── Python ─────
 __pycache__/
 *.pyc
