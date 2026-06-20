@@ -56,6 +56,13 @@ jobs:
           terraform -chdir=terraform/modules/state-backend init -backend=false
           terraform -chdir=terraform/modules/state-backend validate
 
+      - name: Módulos PR04 (media-bucket / events-table / device-registry / iam-edge) — init + validate
+        run: |
+          for m in media-bucket events-table device-registry iam-edge; do
+            terraform -chdir="terraform/modules/$m" init -backend=false
+            terraform -chdir="terraform/modules/$m" validate
+          done
+
       - name: Raíz prod — init (-backend=false) + validate
         run: |
           terraform -chdir=terraform/environments/prod init -backend=false
@@ -71,11 +78,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: tflint — módulo y raíz
+      - name: tflint — módulos y raíz
         run: |
           tflint --chdir=terraform/modules/state-backend
           tflint --chdir=terraform/environments/prod
           tflint --chdir=terraform/modules/iam-github-oidc
+          tflint --chdir=terraform/modules/media-bucket
+          tflint --chdir=terraform/modules/events-table
+          tflint --chdir=terraform/modules/device-registry
+          tflint --chdir=terraform/modules/iam-edge
 
   # Plan READ-ONLY de Terraform contra el backend REMOTO compartido, asumiendo el rol PLAN
   # (`cam-counter-gha-plan`) vía OIDC (sin claves estáticas). CI PLAN-ONLY (F2): este job
