@@ -86,7 +86,8 @@ PUT /ISAPI/EZVIZ/IPC/System/servicesSwitch?format=json
 ```
 Comando: `bash /home/pi/ezviz_rtsp/rtsp_enable_final.sh`
 
-**Stream RTSP de la cámara:** `rtsp://admin:RWCHBY@<IP>:554/Streaming/Channels/101`  (HEVC/H.265, 1920×1080)
+**Stream RTSP de la cámara:** `rtsp://admin:<CODIGO>@<IP>:554/Streaming/Channels/101`  (HEVC/H.265, 1920×1080)
+> 🔐 `<CODIGO>` = código de verificación (contraseña de `admin`); se aporta por `CAM_PASS` (env o fichero gitignored `rtsp-enable/CAM_PASS`), nunca como literal. El código histórico está ROTADO/INVÁLIDO.
 > ⚠️ La cámara usa **DHCP** y cambió de IP varias veces (.10 → .8). Por eso todo resuelve la IP por **MAC `ac:1c:26`**.
 > Recomendado: fijar una **reserva DHCP** en el router para esta MAC.
 
@@ -138,7 +139,7 @@ y la struct de login completa, y usar 1 conexión por login (`NET_DVR_SetConnect
 
 ### Comando/datos confirmados que funcionan
 
-- **Login**: `admin` / `RWCHBY` (código de verificación) en `192.168.1.10:8000`. ✅ (verificado en "run A")
+- **Login**: `admin` / `<CODIGO>` (código de verificación, aportado por `CAM_PASS`) en `192.168.1.10:8000`. ✅ (verificado en "run A")
 - **Endpoint y esquema** (confirmado con un GET exitoso que devolvió el estado real):
   ```
   GET  /ISAPI/EZVIZ/IPC/System/servicesSwitch?format=json
@@ -191,7 +192,7 @@ credenciales/paquetes corruptos. Hikvision/EZVIZ interpretó esto como ataque y 
 ### Al abrir el 554 (objetivo final, ya listo)
 
 ```bash
-python3 /home/pi/yolo_personas.py "rtsp://admin:RWCHBY@192.168.1.10:554/H.264"
+python3 /home/pi/yolo_personas.py "rtsp://admin:<CODIGO>@192.168.1.10:554/H.264"
 # abrir http://192.168.1.9:8080/  -> detección de personas en vivo
 ```
 

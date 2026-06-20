@@ -6,8 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/Documents/hailo-ezviz-personas/rtsp-enable
-ExecStart=/home/pi/Documents/hailo-ezviz-personas/rtsp-enable/start_detection.sh
+WorkingDirectory=__CAM_COUNTER_REPO__/v1/rtsp-enable
+ExecStart=__CAM_COUNTER_REPO__/v1/rtsp-enable/start_detection.sh
 Restart=always
 RestartSec=8
 

@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Política de detección de secretos para cam-counter (gitleaks >= 8.x)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# OBJETIVO: ningún secreto literal en el ÁRBOL ACTUAL del repositorio.
+#
+# MODO DE ESCANEO: working tree / diff (NO historia). Comandos que deben salir VERDE:
+#
+#     gitleaks detect  --no-git --source . --config .gitleaks.toml     # árbol de trabajo
+#     gitleaks protect --staged           --config .gitleaks.toml      # diff staged (pre-commit / CI de PR)
+#
+# DECISIÓN DE HISTORIA (deliberada, no re-litigar aquí):
+#   - NO se reescribe la historia con `git filter-repo` ni `git filter-branch`.
+#   - Motivo: preservar los SHAs y la promesa de `git log --follow` de la futura
+#     migración del árbol a `v1/` (PR01). Reescribir rompería ambas cosas.
+#   - El único secreto histórico es el código de verificación de la cámara `RWCHBY`,
+#     que se trata como QUEMADO/ROTADO/INVÁLIDO (el factory-reset es la única vía de
+#     recuperación del SDK Hikvision, ver docs/HALLAZGOS.md). Ya no concede acceso.
+#   - Por eso el gate escanea SOLO el working tree / diff: el árbol actual está limpio
+#     del literal y la credencial real se inyecta por entorno ($CAM_PASS) o por el
+#     fichero gitignored `rtsp-enable/CAM_PASS`, nunca versionada.
+#
+# Usamos el set de reglas por defecto de gitleaks.
+[extend]
+useDefault = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Allowlist del secreto HISTÓRICO (documentado, intencionadamente COMENTADO).
+# ─────────────────────────────────────────────────────────────────────────────
+# El gate por defecto escanea el working tree / diff (--no-git / --staged), donde el
+# literal `RWCHBY` ya NO existe, así que no hace falta ningún allowlist activo.
+#
+# Si en algún momento se ejecutara un escaneo CON historia (p.ej. `gitleaks detect`
+# sobre todos los commits), descomenta este bloque para tolerar el secreto histórico
+# ya rotado SIN reescribir la historia:
+#
+# [allowlist]
+# description = "Código de verificación histórico de la cámara, ROTADO/INVÁLIDO (factory-reset). No reescribimos la historia para preservar SHAs y `git log --follow` del PR01."
+# regexes = [
+#   '''RWCHBY''',
+# ]

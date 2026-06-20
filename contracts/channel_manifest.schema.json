@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cam-counter/contracts/channel_manifest.schema.json",
+  "title": "ChannelManifest",
+  "description": "Manifiesto por canal en el bucket de releases (cam-counter-fleet-releases-950639281773), un objeto por canal en 'channels/<channel>/manifest.json'. Este manifiesto es la ÚNICA fuente de la versión deseada que lee el agente OTA del Pi (vía SigV4, NUNCA URLs presigned). Escritores: SÓLO los workflows de release/promote (escritor único, ETag If-Match) con el rol de deploy gated por GitHub Environment; el device-registry desired_version es un mero espejo de observabilidad que el agente NO consulta para decidir.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Versión del esquema del contrato. Un rename de campo es BREAKING y exige bump."
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["canary", "stable"],
+      "description": "Canal de releases al que pertenece este manifiesto."
+    },
+    "version": {
+      "type": "string",
+      "description": "Versión deseada del canal (SemVer canónico, p.ej. '1.2.3' o '1.2.3-rc.1'). Misma cadena que fluye por bundle-manifest, device-registry y /api/device."
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Contador MONÓTONO de publicaciones del canal; útil para detectar regresiones/orden."
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Artefacto OTA (tarball firmado) publicado para esta versión.",
+      "properties": {
+        "key": { "type": "string", "description": "Clave S3 del tarball del artefacto en el bucket de releases." },
+        "sha256": { "type": "string", "description": "SHA-256 (hex) del tarball; el agente lo verifica antes de instalar." },
+        "size_bytes": { "type": "integer", "minimum": 0, "description": "Tamaño del tarball en bytes." },
+        "sig_key": { "type": "string", "description": "Clave S3 de la firma (Ed25519 / minisign) del tarball." }
+      },
+      "required": ["key", "sha256", "size_bytes", "sig_key"]
+    },
+    "native_blob": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Blob nativo asociado (p.ej. binarios x86/SDK) referenciado por el artefacto.",
+      "properties": {
+        "key": { "type": "string", "description": "Clave S3 del blob nativo." },
+        "sha256": { "type": "string", "description": "SHA-256 (hex) del blob nativo." }
+      },
+      "required": ["key", "sha256"]
+    },
+    "min_agent_version": {
+      "type": "string",
+      "description": "Versión mínima del update-agent (SemVer) requerida para instalar esta release."
+    },
+    "released_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Instante de publicación de la release (date-time UTC)."
+    },
+    "released_by": {
+      "type": "string",
+      "description": "Identidad/workflow que publicó la release."
+    },
+    "git_sha": {
+      "type": "string",
+      "description": "SHA git del commit del que se construyó la release."
+    },
+    "previous_version": {
+      "type": ["string", "null"],
+      "description": "Versión anterior del canal (SemVer) o null; habilita el rollback de un clic."
+    }
+  },
+  "required": [
+    "schema_version",
+    "channel",
+    "version",
+    "sequence",
+    "artifact",
+    "min_agent_version",
+    "released_at"
+  ]
+}

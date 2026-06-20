@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cam-counter/contracts/line_config.schema.json",
+  "title": "LineConfig",
+  "description": "Configuración de la línea-umbral de conteo por cámara. Vive en LOCAL en el Pi. El hot-reload se dispara por config_version: el pipeline relee la config al detectar un config_version mayor, sin reiniciar el servicio. Toda la geometría usa floats normalizados 0..1 relativos al frame original de inferencia, origen arriba-izquierda (nunca píxeles).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "site_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+      "description": "Slug del sitio. ASCII minúscula, sin '#' ni '/'."
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+      "description": "Slug del dispositivo (Pi). ASCII minúscula, sin '#' ni '/'."
+    },
+    "camera_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+      "description": "Slug de la cámara, '{device_id}-cam{N}'. ASCII minúscula, sin '#' ni '/'."
+    },
+    "config_version": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Contador MONÓTONO de la config. Al incrementarse, el pipeline relee la config en caliente (hot-reload) sin reiniciar el servicio."
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Segmento de la línea-umbral: dos endpoints normalizados 0..1.",
+      "properties": {
+        "a": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Primer endpoint del segmento (normalizado 0..1).",
+          "properties": {
+            "x": { "type": "number", "minimum": 0, "maximum": 1, "description": "Coordenada X normalizada 0..1." },
+            "y": { "type": "number", "minimum": 0, "maximum": 1, "description": "Coordenada Y normalizada 0..1 (origen arriba)." }
+          },
+          "required": ["x", "y"]
+        },
+        "b": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Segundo endpoint del segmento (normalizado 0..1).",
+          "properties": {
+            "x": { "type": "number", "minimum": 0, "maximum": 1, "description": "Coordenada X normalizada 0..1." },
+            "y": { "type": "number", "minimum": 0, "maximum": 1, "description": "Coordenada Y normalizada 0..1 (origen arriba)." }
+          },
+          "required": ["x", "y"]
+        }
+      },
+      "required": ["a", "b"]
+    },
+    "positive_side": {
+      "type": "integer",
+      "enum": [-1, 1],
+      "description": "Qué signo del producto cruzado (lado de la línea) cuenta como 'in'. Define el flip de signo que mapea geometría -> direction."
+    },
+    "positive_label": {
+      "type": "string",
+      "description": "Etiqueta humana del sentido positivo/'in' (p.ej. 'subieron')."
+    },
+    "negative_label": {
+      "type": "string",
+      "description": "Etiqueta humana del sentido negativo/'out' (p.ej. 'bajaron')."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Instante de la última actualización de la config (date-time UTC)."
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Versión del esquema del contrato. Un rename de campo es BREAKING y exige bump."
+    }
+  },
+  "required": [
+    "site_id",
+    "device_id",
+    "camera_id",
+    "config_version",
+    "line",
+    "positive_side",
+    "schema_version"
+  ]
+}

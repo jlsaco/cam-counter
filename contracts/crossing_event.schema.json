@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cam-counter/contracts/crossing_event.schema.json",
+  "title": "CrossingEvent",
+  "description": "Evento de cruce de la línea-umbral por una persona trackeada. Es el contrato espejo del modelo Pydantic futuro. Snake_case, schema_version = 1. Se persiste en SQLite local (UNIQUE(event_id)) y se sincroniza idempotentemente a DynamoDB (PK = CAM#{site_id}#{device_id}#{camera_id}, SK = TS#{ts_event_ms:013d}#{event_id}). El event_id determinista + conditional put hacen idempotente el sync edge->cloud.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "description": "Identificador determinista: sha1 en hex minúscula de 'site_id|device_id|camera_id|track_id|crossing_seq'. El sha1 es NO criptográfico; se usa SÓLO para deduplicación idempotente del sync (un reintento del mismo event_id no duplica)."
+    },
+    "site_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+      "description": "Slug del sitio. ASCII minúscula, sin '#' (delimita claves DynamoDB) ni '/' (delimita rutas S3)."
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+      "description": "Slug del dispositivo (Pi). ASCII minúscula, sin '#' ni '/'."
+    },
+    "camera_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+      "description": "Slug de la cámara, globalmente único, con forma '{device_id}-cam{N}'. ASCII minúscula, sin '#' ni '/'."
+    },
+    "track_id": {
+      "type": "string",
+      "description": "Identificador del track (objeto seguido) que produjo el cruce. Único dentro de la cámara durante la vida del track."
+    },
+    "crossing_seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Contador MONÓTONO PERSISTIDO POR CÁMARA (no por track, no reiniciable). Se incrementa una vez por cada cruce contado de esa cámara y nunca decrece ni se reinicia; entra en el cómputo del event_id determinista para garantizar unicidad estable entre reintentos."
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["in", "out"],
+      "description": "Único valor de cable/almacenado del sentido del cruce. Los términos humanos ('subieron'/'bajaron') los aportan positive_label/negative_label, no este campo."
+    },
+    "positive_label": {
+      "type": "string",
+      "description": "Etiqueta humana del sentido positivo (p.ej. 'subieron'). Resuelta desde la config de línea en vigor."
+    },
+    "negative_label": {
+      "type": "string",
+      "description": "Etiqueta humana del sentido negativo (p.ej. 'bajaron'). Resuelta desde la config de línea en vigor."
+    },
+    "label": {
+      "type": "string",
+      "description": "Etiqueta humana ya resuelta en el momento del evento (positive_label si direction='in', negative_label si direction='out')."
+    },
+    "line_version": {
+      "type": "integer",
+      "description": "Versión de la config de línea (line_config.config_version) en vigor cuando se contó el cruce."
+    },
+    "ts_event_ms": {
+      "type": "integer",
+      "description": "Timestamp autoritativo del evento en epoch milisegundos UTC."
+    },
+    "ts_event_iso": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Mismo instante que ts_event_ms en ISO-8601 UTC (date-time)."
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Confianza de la detección asociada al cruce (0..1)."
+    },
+    "clip_key": {
+      "type": ["string", "null"],
+      "description": "Clave S3 del recorte/media del evento, o null si aún no aplica. Convención: media/{site_id}/{device_id}/{camera_id}/{yyyy}/{mm}/{dd}/{event_id}.{ext}."
+    },
+    "clip_status": {
+      "type": "string",
+      "enum": ["pending", "uploading", "uploaded", "failed"],
+      "description": "Estado del ciclo de vida del clip de media."
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Versión del esquema del contrato. Un rename de campo es BREAKING y exige bump."
+    },
+    "synced": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "Bandera SÓLO-LOCAL: 0 = pendiente de sincronizar a cloud, 1 = sincronizado. No se persiste en DynamoDB."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Instante de creación del registro local (date-time UTC)."
+    }
+  },
+  "required": [
+    "event_id",
+    "site_id",
+    "device_id",
+    "camera_id",
+    "track_id",
+    "crossing_seq",
+    "direction",
+    "ts_event_ms",
+    "ts_event_iso",
+    "schema_version"
+  ]
+}

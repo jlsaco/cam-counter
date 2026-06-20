@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cam-counter/contracts/bundle_manifest.schema.json",
+  "title": "BundleManifest",
+  "description": "Manifiesto embebido DENTRO del artefacto OTA (el tarball). Describe el bundle que el update-agent instala de forma atómica. La cadena 'version' es la MISMA que fluye por el channel-manifest, el device-registry y /api/device.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Versión del esquema del contrato. Un rename de campo es BREAKING y exige bump."
+    },
+    "version": {
+      "type": "string",
+      "description": "Versión del bundle (SemVer canónico). El mismo string que el resto del sistema (channel-manifest, device-registry, /api/device)."
+    },
+    "git_sha": {
+      "type": "string",
+      "description": "SHA git del commit del que se construyó el bundle."
+    },
+    "built_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Instante de construcción del bundle (date-time UTC)."
+    },
+    "min_agent_version": {
+      "type": "string",
+      "description": "Versión mínima del update-agent (SemVer) requerida para instalar este bundle."
+    },
+    "entrypoint": {
+      "type": "string",
+      "description": "Ruta relativa, dentro del bundle, al ejecutable/entrypoint que el agente arranca tras activar."
+    },
+    "python": {
+      "type": "string",
+      "description": "Versión objetivo del intérprete de Python (opcional)."
+    }
+  },
+  "required": [
+    "schema_version",
+    "version",
+    "git_sha",
+    "built_at",
+    "min_agent_version",
+    "entrypoint"
+  ]
+}
