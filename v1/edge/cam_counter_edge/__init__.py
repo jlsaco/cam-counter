@@ -28,6 +28,12 @@ from .identifiers import (
     validate_site_id,
     validate_slug,
 )
+
+# NOTA: se exponen Tracker/CentroidIoUTracker, pero NO ``tracker.Track`` (estado de runtime
+# del tracker, con track_id entero): re-exportarlo aquí pisaría el ``types.Track``
+# orientado al contrato (track_id string) ya exportado más abajo. Quien lo necesite lo
+# importa explícitamente con ``from cam_counter_edge.tracker import Track``.
+from .tracker import CentroidIoUTracker, Tracker
 from .types import (
     CLIP_STATUSES,
     CROSSING_DIRECTIONS,
@@ -47,6 +53,9 @@ __all__ = [
     "DEFAULT_HEF_PATH",
     # dummy
     "DummyDetector",
+    # tracker (etapa track del pipeline)
+    "Tracker",
+    "CentroidIoUTracker",
     # types
     "Detection",
     "Track",
