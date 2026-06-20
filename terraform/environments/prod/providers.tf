@@ -23,3 +23,28 @@ provider "aws" {
     }
   }
 }
+
+# Proveedor ALIAS `aws.iam` — para recursos IAM cuyas claves de tag son CASE-INSENSITIVE.
+#
+# PR03: AWS IAM `CreateRole` rechaza claves de tag que difieren sólo en mayúsculas
+# (`Project`/`project`, `ManagedBy`/`managed_by`). El esquema F3 dual-case del proveedor por
+# defecto —válido en S3/DynamoDB, que SÍ distinguen mayúsculas— rompería la creación de
+# roles IAM. Este alias aplica un subconjunto IAM-safe que CONSERVA la clave MINÚSCULA
+# `managed_by = "mad-runner"` (requisito de verificación F3) y `project = "cam-counter"`,
+# más `Env` (sin colisión), y OMITE las capitalizadas `Project`/`ManagedBy` que colisionan.
+# Sólo lo consumen los ROLES del módulo `iam_github_oidc`; el proveedor OIDC permanece en el
+# proveedor por defecto con F3 completo (su API de tagging sí tolera dual-case).
+provider "aws" {
+  alias  = "iam"
+  region = "us-east-1"
+
+  allowed_account_ids = ["950639281773"]
+
+  default_tags {
+    tags = {
+      Env        = "prod"
+      project    = "cam-counter"
+      managed_by = "mad-runner"
+    }
+  }
+}

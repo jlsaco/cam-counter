@@ -75,6 +75,74 @@ jobs:
         run: |
           tflint --chdir=terraform/modules/state-backend
           tflint --chdir=terraform/environments/prod
+          tflint --chdir=terraform/modules/iam-github-oidc
+
+  # Plan READ-ONLY de Terraform contra el backend REMOTO compartido, asumiendo el rol PLAN
+  # (`cam-counter-gha-plan`) vía OIDC (sin claves estáticas). CI PLAN-ONLY (F2): este job
+  # NUNCA ejecuta `apply`. El `apply` de la infraestructura de la pila lo realiza el RUNNER
+  # MAD de forma autónoma fuera del CI, con las credenciales de su entorno. El rol PLAN es de
+  # SOLO LECTURA (+ escritura mínima al lock para que `plan` adquiera el lock de DynamoDB).
+  terraform-plan:
+    needs: changes
+    if: ${{ needs.changes.outputs.terraform == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write       # imprescindible para que configure-aws-credentials obtenga el token OIDC
+      contents: read
+      pull-requests: write  # sólo para publicar el plan como comentario del PR
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # `git describe` ve los tags (versionado SemVer derivado de tags)
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.5"
+          terraform_wrapper: false
+
+      - name: Configurar credenciales AWS por OIDC (rol PLAN, solo lectura)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # ARNs/región vienen de VARIABLES de repositorio (vars.*), NO secrets, NO claves.
+          role-to-assume: ${{ vars.GHA_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: cam-counter-gha-plan
+          # SIN aws-access-key-id / aws-secret-access-key: autenticación 100% por OIDC.
+
+      - name: Terraform init (backend remoto S3 compartido)
+        run: terraform -chdir=terraform/environments/prod init -input=false
+
+      - name: Terraform plan (SOLO LECTURA; jamás apply)
+        id: plan
+        run: |
+          set -o pipefail
+          terraform -chdir=terraform/environments/prod plan -no-color -input=false 2>&1 \
+            | tee plan_output.txt
+
+      - name: Publicar el plan como comentario del PR
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const raw = fs.readFileSync('plan_output.txt', 'utf8');
+            const plan = raw.length > 60000 ? raw.slice(0, 60000) + '\n... (truncado)' : raw;
+            const body = [
+              '#### Terraform Plan (read-only, rol PLAN vía OIDC)',
+              '',
+              '```',
+              plan,
+              '```',
+              '',
+              '_CI plan-only (F2): el `apply` lo ejecuta el RUNNER MAD, no GitHub Actions._',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
 
   # Escaneo de secretos SÓLO sobre el working-tree del PR (no historia), según política
   # PR00b: la historia pre-rotación contiene el código de cámara ya QUEMADO/ROTADO y

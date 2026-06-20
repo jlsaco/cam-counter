@@ -39,6 +39,9 @@ __pycache__/
 !*.tfvars.example
 .terraform.lock.hcl
 crash.log
+# Planes binarios guardados (-out): los genera el runner al aplicar; jamás se commitean.
+tfplan*
+*.tfplan
 
 # ───── Node / Vite ─────
 node_modules/
