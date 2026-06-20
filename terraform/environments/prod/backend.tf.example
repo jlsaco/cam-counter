@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PLANTILLA del backend remoto (S3 + lock DynamoDB).
+#
+# El bootstrap en DOS FASES resuelve el huevo-y-la-gallina del state remoto:
+#
+#   FASE 1 (estado LOCAL):  SIN `backend.tf` activo, `terraform init` usa estado
+#     local y `terraform apply` CREA el bucket de tfstate y la tabla de lock.
+#   FASE 2 (migración):     se copia esta plantilla a `backend.tf` y se ejecuta
+#     `terraform init -migrate-state -force-copy`, moviendo el .tfstate local al
+#     bucket S3 con lock en DynamoDB.
+#
+# Tras el bootstrap, en este repo `backend.tf` ya queda COMMITEADO y ACTIVO, de
+# modo que PR03+ usan el backend remoto sin pasos manuales. Esta plantilla se
+# conserva como documentación del procedimiento y para re-bootstrap / teardown.
+#
+# Lo ejecuta el RUNNER MAD de forma AUTÓNOMA con las credenciales de SU ENTORNO
+# (jamás commiteadas), SIEMPRE tras inspeccionar que el `plan` es estrictamente
+# aditivo (F1). El CI NUNCA hace apply/plan. Ver README.md.
+# ─────────────────────────────────────────────────────────────────────────────
+terraform {
+  backend "s3" {
+    bucket         = "cam-counter-tfstate-950639281773"
+    key            = "environments/prod/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "cam-counter-tfstate-lock"
+    encrypt        = true
+  }
+}
