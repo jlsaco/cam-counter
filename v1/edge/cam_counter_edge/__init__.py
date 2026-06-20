@@ -33,6 +33,14 @@ from .identifiers import (
 # del tracker, con track_id entero): re-exportarlo aquí pisaría el ``types.Track``
 # orientado al contrato (track_id string) ya exportado más abajo. Quien lo necesite lo
 # importa explícitamente con ``from cam_counter_edge.tracker import Track``.
+from .line_counter import (
+    LineCounter,
+    cross,
+    iso_from_ms,
+    make_event_id,
+    signed_side,
+)
+from .store import Store, open_store
 from .tracker import CentroidIoUTracker, Tracker
 from .types import (
     CLIP_STATUSES,
@@ -42,7 +50,10 @@ from .types import (
     LINE_CONFIG_FIELDS,
     PERSON_CLASS_ID,
     SCHEMA_VERSION,
+    CrossingEvent,
     Detection,
+    LineConfig,
+    Point,
     Track,
     parse_nms_class,
 )
@@ -56,9 +67,20 @@ __all__ = [
     # tracker (etapa track del pipeline)
     "Tracker",
     "CentroidIoUTracker",
+    # count (etapa count del pipeline): LineCounter + geometría + store SQLite
+    "LineCounter",
+    "signed_side",
+    "cross",
+    "make_event_id",
+    "iso_from_ms",
+    "Store",
+    "open_store",
     # types
     "Detection",
     "Track",
+    "CrossingEvent",
+    "LineConfig",
+    "Point",
     "parse_nms_class",
     "PERSON_CLASS_ID",
     "DEFAULT_CONF",

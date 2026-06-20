@@ -12,7 +12,11 @@ resto del paquete se alinee sin re-teclear los nombres y sin hacer drift de esqu
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+# Punto normalizado 0..1 ``(x, y)`` con origen arriba-izquierda. Tanto los extremos A,B de
+# la línea-umbral como los centroides de track usan esta forma.
+Point = tuple[float, float]
 
 # clase 0 = persona en la salida NMS-por-clase del modelo YOLOv8s sobre COCO.
 PERSON_CLASS_ID = 0
@@ -173,3 +177,69 @@ def parse_nms_class(
             Detection(bbox_norm=bbox_norm, class_id=class_id, confidence=score)
         )
     return detections
+
+
+@dataclass
+class LineConfig:
+    """Configuración de la línea-umbral de conteo de UNA cámara (espejo de LineConfig).
+
+    Fuente de verdad del esquema: ``contracts/line_config.schema.json``. La geometría es
+    NORMALIZADA 0..1 (nunca píxeles). ``positive_side`` (+1/-1) selecciona qué semiplano
+    cuenta como ``'in'`` y, por tanto, qué flip de signo mapea a cada ``direction``.
+
+    Attributes:
+        site_id/device_id/camera_id: slugs (se validan en el LineCounter antes de usarlos).
+        a, b: extremos ``(x, y)`` normalizados del segmento de la línea-umbral.
+        positive_side: +1 o -1; signo del producto cruzado que cuenta como ``'in'``.
+        positive_label/negative_label: etiquetas humanas de cada sentido (p.ej.
+            ``'subieron'``/``'bajaron'``); son SÓLO presentación.
+        config_version: versión monótona de la config (espejo de ``line_version`` en el
+            CrossingEvent que se emita bajo esta config).
+    """
+
+    site_id: str
+    device_id: str
+    camera_id: str
+    a: Point
+    b: Point
+    positive_side: int = 1
+    positive_label: str = "in"
+    negative_label: str = "out"
+    config_version: int = 1
+
+
+@dataclass
+class CrossingEvent:
+    """Evento de cruce de la línea-umbral (espejo runtime del contrato CrossingEvent).
+
+    Fuente de verdad del esquema: ``contracts/crossing_event.schema.json`` (snake_case,
+    ``schema_version = 1``). ``event_id`` es DETERMINISTA =
+    ``sha1('{site}|{device}|{camera}|{track}|{crossing_seq}')`` en hex minúscula, lo que hace
+    IDEMPOTENTE el sync a la nube (un reintento del mismo ``event_id`` no duplica).
+
+    ``positive_label``/``negative_label`` se llevan en memoria como ayuda de presentación,
+    pero NO son columnas persistidas: el store materializa la etiqueta ya resuelta en
+    ``label`` (más ``direction``). Los campos de clip nacen como ``clip_key=None`` /
+    ``clip_status='pending'`` (el recorder de clips llega en un PR posterior).
+    """
+
+    event_id: str
+    site_id: str
+    device_id: str
+    camera_id: str
+    track_id: str
+    crossing_seq: int
+    direction: str
+    label: str
+    line_version: int
+    ts_event_ms: int
+    ts_event_iso: str
+    confidence: float = 0.0
+    clip_key: str | None = None
+    clip_status: str = "pending"
+    schema_version: int = SCHEMA_VERSION
+    synced: int = 0
+    created_at: str = ""
+    # Presentación únicamente (no se persisten como columnas; ver docstring).
+    positive_label: str = field(default="in")
+    negative_label: str = field(default="out")
