@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cam-counter/contracts/crossing_event.schema.json",
+  "title": "CrossingEvent",
+  "description": "Evento de cruce de línea (snake_case, schema_version=1). edge-first: se genera y persiste en local (SQLite WAL) y se sincroniza a la nube de forma idempotente vía event_id determinista + conditional put en DynamoDB.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "description": "Identificador DETERMINISTA = sha1 en hex minúscula de 'site_id|device_id|camera_id|track_id|crossing_seq'. El sha1 NO es criptográfico: se usa SÓLO para deduplicación idempotente del sync edge->cloud (un reintento del mismo event_id no duplica).",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "site_id": {
+      "type": "string",
+      "description": "Slug ASCII minúscula del sitio. Sin '#' (delimita claves DynamoDB) ni '/' (delimita rutas S3).",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
+    "device_id": {
+      "type": "string",
+      "description": "Slug ASCII minúscula del dispositivo (Pi).",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
+    "camera_id": {
+      "type": "string",
+      "description": "Slug ASCII minúscula, globalmente único, con forma '{device_id}-cam{N}'.",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
+    "track_id": {
+      "type": "string",
+      "description": "Identificador del track del objeto cuyo cruce generó el evento."
+    },
+    "crossing_seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Contador MONÓTONO PERSISTIDO POR CÁMARA (no por track, no reiniciable). Cada cruce contado por una cámara incrementa este contador; junto con el resto de identificadores hace determinista el event_id. NO se reinicia entre arranques ni por track."
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["in", "out"],
+      "description": "Único valor de cable/almacenado del sentido del cruce. Los términos humanos los llevan positive_label/negative_label (no se almacena 'subieron'/'bajaron' aquí)."
+    },
+    "positive_label": {
+      "type": "string",
+      "description": "Etiqueta humana del sentido positivo, p.ej. 'subieron'."
+    },
+    "negative_label": {
+      "type": "string",
+      "description": "Etiqueta humana del sentido negativo, p.ej. 'bajaron'."
+    },
+    "label": {
+      "type": "string",
+      "description": "Etiqueta humana resuelta en el momento del evento (positive_label o negative_label según direction)."
+    },
+    "line_version": {
+      "type": "integer",
+      "description": "Versión de la config de línea en vigor cuando se contó el cruce (config_version de line_config)."
+    },
+    "ts_event_ms": {
+      "type": "integer",
+      "description": "Timestamp del evento en epoch milisegundos UTC. Autoritativo."
+    },
+    "ts_event_iso": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp del evento en ISO-8601 UTC (espejo legible de ts_event_ms)."
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Confianza de la detección asociada al cruce."
+    },
+    "clip_key": {
+      "type": ["string", "null"],
+      "description": "Clave S3 del media (clip/gif/snapshot) del evento, o null si aún no aplica. Convención: media/{site_id}/{device_id}/{camera_id}/{yyyy}/{mm}/{dd}/{event_id}.{ext}."
+    },
+    "clip_status": {
+      "type": "string",
+      "enum": ["pending", "uploading", "uploaded", "failed"],
+      "description": "Estado de subida del media del evento."
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Versión del schema. Cualquier rename de campo es BREAKING y requiere bump."
+    },
+    "synced": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "Flag SÓLO-LOCAL (SQLite): 0 = aún no sincronizado a la nube, 1 = sincronizado. No se persiste en la nube."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Instante de creación del registro local (ISO-8601 UTC)."
+    }
+  },
+  "required": [
+    "event_id",
+    "site_id",
+    "device_id",
+    "camera_id",
+    "track_id",
+    "crossing_seq",
+    "direction",
+    "ts_event_ms",
+    "ts_event_iso",
+    "schema_version"
+  ]
+}

@@ -29,30 +29,43 @@ Verás el vídeo con cajas verdes sobre las personas y un overlay `Personas: N  
 | Persistencia | Servicio `systemd` (`hailo-personas`), arranca al boot, se auto-repara |
 
 > El límite de **15 FPS lo impone la cámara** (su firmware), no el Pi ni el Hailo
-> (que están al ~22-27 %). Hay holgura para **3-4 cámaras** más. Ver `docs/HALLAZGOS.md`.
+> (que están al ~22-27 %). Hay holgura para **3-4 cámaras** más. Ver `v1/docs/HALLAZGOS.md`.
 
 ## 📁 Estructura
 
+Este repo es un **monorepo**. El sistema edge histórico (detector de personas en la Pi)
+vive ahora bajo **`v1/`**; los PRs siguientes construyen el producto (contador
+multi-cámara, UI local, OTA de flota) sobre esta base.
+
 ```
-hailo-ezviz-personas/
+cam-counter/
 ├── README.md
-├── docs/
-│   ├── HALLAZGOS.md          ← bitácora técnica: qué funcionó y por qué (LÉEME)
-│   └── images/               ← capturas de la detección en vivo
-├── detection/                ← detección de personas (Python + Hailo)
-│   ├── yolo_personas_mt.py   ← PRODUCCIÓN: pipeline multi-hilo
-│   ├── yolo_personas.py      ← variante de un solo hilo
-│   ├── test_hailo_person.py  ← prueba del Hailo sobre una imagen
-│   └── profile_pipeline.py   ← perfilador (decode/infer/encode)
-├── rtsp-enable/              ← herramienta que activa el RTSP de la cámara EZVIZ
-│   ├── start_detection.sh    ← arranque robusto (resuelve cámara + activa RTSP + lanza)
-│   ├── rtsp_enable_final.sh  ← activa RTSP (login SDK + PUT servicesSwitch)
-│   ├── enable_rtsp_now.sh    ← lanzador del SDK Hikvision bajo box64
-│   ├── src/ + build.gradle   ← código Java del activador (modificado; versionado)
-│   ├── lib/                  ← SDK nativo Hikvision x86-64  (ignorado en git, ver abajo)
-│   └── x64root/              ← sysroot amd64 + JRE para box64 (ignorado en git)
-└── systemd/
-    └── hailo-personas.service
+├── v1/                       ← sistema edge histórico (detector Hailo + activador RTSP)
+│   ├── docs/
+│   │   ├── HALLAZGOS.md       ← bitácora técnica: qué funcionó y por qué (LÉEME)
+│   │   └── images/            ← capturas de la detección en vivo
+│   ├── detection/             ← detección de personas (Python + Hailo)
+│   │   ├── yolo_personas_mt.py  ← PRODUCCIÓN: pipeline multi-hilo
+│   │   ├── yolo_personas.py     ← variante de un solo hilo
+│   │   ├── test_hailo_person.py ← prueba del Hailo sobre una imagen
+│   │   └── profile_pipeline.py  ← perfilador (decode/infer/encode)
+│   ├── rtsp-enable/           ← herramienta que activa el RTSP de la cámara EZVIZ
+│   │   ├── start_detection.sh   ← arranque robusto (resuelve cámara + activa RTSP + lanza)
+│   │   ├── rtsp_enable_final.sh ← activa RTSP (login SDK + PUT servicesSwitch)
+│   │   ├── enable_rtsp_now.sh   ← lanzador del SDK Hikvision bajo box64
+│   │   ├── src/ + build.gradle  ← código Java del activador (modificado; versionado)
+│   │   ├── lib/                 ← SDK nativo Hikvision x86-64  (ignorado en git, ver abajo)
+│   │   └── x64root/             ← sysroot amd64 + JRE para box64 (ignorado en git)
+│   ├── systemd/
+│   │   └── hailo-personas.service  ← unit con placeholder, renderizada por el instalador
+│   ├── api/                   ← (esqueleto) API + UI local FastAPI (PR posterior)
+│   ├── ui/                    ← (esqueleto) SPA React/Vite/Tailwind (PR posterior)
+│   └── edge/                  ← (esqueleto) paquete de conteo edge (PR posterior)
+├── contracts/                ← JSON Schemas canónicos (CrossingEvent, line_config, …)
+├── scripts/                  ← version.py, install_hailo_service.sh, verify_toolchain.sh
+├── terraform/                ← (esqueleto) infra como código (PR posterior)
+├── ota/                      ← (esqueleto) flota / update-agent OTA (PR posterior)
+└── docs/                     ← docs de producto (ARCHITECTURE, CONTRIBUTING)
 ```
 
 ## 🔧 Por qué la activación del RTSP es "tan complicada"
@@ -61,7 +74,7 @@ Esta cámara EZVIZ trae el **RTSP desactivado** y **bloquea el ISAPI** local; so
 mandando un comando por el **SDK propietario de Hikvision** (puerto 8000). Ese SDK es **x86-64**
 y la Pi es **ARM64 con páginas de 16 KB**, así que corre bajo **box64** + un sysroot amd64.
 Toda la odisea (10 obstáculos resueltos: box64, OpenSSL, struct de login de 32 bits, formato del
-PUT, lockout anti-fuerza-bruta…) está documentada en **`docs/HALLAZGOS.md`**.
+PUT, lockout anti-fuerza-bruta…) está documentada en **`v1/docs/HALLAZGOS.md`**.
 
 Parámetros que finalmente funcionan:
 ```
@@ -78,7 +91,7 @@ sudo systemctl status hailo-personas
 sudo journalctl -u hailo-personas -f
 
 # Forzar activación del RTSP (si la cámara lo apagó tras reiniciar)
-bash rtsp-enable/rtsp_enable_final.sh
+bash v1/rtsp-enable/rtsp_enable_final.sh
 
 # Reiniciar la detección
 sudo systemctl restart hailo-personas
@@ -93,7 +106,7 @@ pegatina de la cámara. URL: `rtsp://admin:<codigo>@<IP>:554/Streaming/Channels/
 ### ⚙️ Valores fijados a ESTA cámara (editar si cambias de cámara)
 
 Esta instalación está configurada para **esta** cámara concreta. Si conectas **otra**, edita
-estos dos valores en `rtsp-enable/start_detection.sh` **y** `rtsp-enable/rtsp_enable_final.sh`:
+estos dos valores en `v1/rtsp-enable/start_detection.sh` **y** `v1/rtsp-enable/rtsp_enable_final.sh`:
 
 | Valor | Actual | Qué es | Dónde se obtiene en otra cámara |
 |---|---|---|---|
@@ -102,13 +115,13 @@ estos dos valores en `rtsp-enable/start_detection.sh` **y** `rtsp-enable/rtsp_en
 
 > 🔐 **Credencial fuera de git.** El código de verificación NO se versiona. Apórtalo en
 > el Pi vía `export CAM_PASS=<codigo>` o creando el fichero gitignored
-> `rtsp-enable/CAM_PASS` (una sola línea con el código). Los scripts lo resuelven en este
+> `v1/rtsp-enable/CAM_PASS` (una sola línea con el código). Los scripts lo resuelven en este
 > orden: variable de entorno → fichero → si falta, fallan con un mensaje claro (sin valor
 > por defecto). El MAC sí queda fijado en `start_detection.sh` y `rtsp_enable_final.sh`.
 >
 > El código de verificación que aparece en el historial de git está
 > **ROTADO/INVÁLIDO** (el factory-reset es la única vía de recuperación del SDK, ver
-> `docs/HALLAZGOS.md`); usa la credencial real de la pegatina por env o fichero.
+> `v1/docs/HALLAZGOS.md`); usa la credencial real de la pegatina por env o fichero.
 
 (Para la **misma** cámara en otra Raspberry, basta con volver a aportar `CAM_PASS`; el resto no cambia.)
 
@@ -136,9 +149,9 @@ sudo apt install -y hailo-all          # driver Hailo + HailoRT + Python API + m
 hailortcli fw-control identify         # comprobar: debe responder "Hailo-8"
 #    (si NO aparece /dev/hailo0:  sudo modprobe hailo_pci   — o reiniciar la Pi)
 
-# 1) Clonar este repositorio
+# 1) Clonar este repositorio (la ruta del clon puede ser CUALQUIERA; el instalador la resuelve)
 git clone https://github.com/jlsaco/cam-counter.git
-cd cam-counter/rtsp-enable
+cd cam-counter/v1/rtsp-enable
 
 # 2) Descargar y extraer los binarios desde S3 (requiere awscli con credenciales)
 aws s3 cp s3://cam-counter-rpi-artifacts-950639281773/rtsp-enable/cam-counter-rtsp-binaries.tar.gz .
@@ -147,10 +160,11 @@ aws s3 cp s3://cam-counter-rpi-artifacts-950639281773/rtsp-enable/cam-counter-rt
 sha256sum -c cam-counter-rtsp-binaries.tar.gz.sha256   # debe decir: OK
 tar xzf cam-counter-rtsp-binaries.tar.gz               # crea lib/ x64root/ *.jar
 
-# 3) Instalar el servicio (ajusta las rutas del .service a la nueva ubicación)
-sudo cp ../systemd/hailo-personas.service /etc/systemd/system/
-sudo sed -i "s|/home/pi/Documents/hailo-ezviz-personas|$(cd .. && pwd)|g" /etc/systemd/system/hailo-personas.service
-sudo systemctl daemon-reload && sudo systemctl enable --now hailo-personas
+# 3) Instalar el servicio con el instalador IDEMPOTENTE.
+#    La unit versionada usa el placeholder __CAM_COUNTER_REPO__; el instalador resuelve
+#    la ruta REAL del clon y la renderiza, hace daemon-reload y enable --now.
+#    Re-ejecutarlo es seguro (idempotente). No hay rutas absolutas hardcodeadas.
+sudo bash ../../scripts/install_hailo_service.sh
 
 # 4) VERIFICAR que quedó funcionando
 sleep 15                                                   # dar tiempo a resolver cámara + activar RTSP + cargar Hailo
@@ -160,9 +174,11 @@ curl -s -o /dev/null -w "MJPEG HTTP %{http_code}\n" http://localhost:8080/   # -
 sudo journalctl -u hailo-personas -n 20 --no-pager         # si algo falla, aquí está el porqué
 ```
 
-> ⚠️ El archivo `systemd/hailo-personas.service` tiene rutas absolutas a
-> `/home/pi/Documents/hailo-ezviz-personas`. Si clonas en otra ruta, ajústalas (el `sed`
-> de arriba lo hace). Los scripts `*.sh` ya derivan su ubicación solos.
+> ⚙️ La unit `v1/systemd/hailo-personas.service` **NO** tiene rutas absolutas: usa el
+> placeholder `__CAM_COUNTER_REPO__`. El instalador `scripts/install_hailo_service.sh`
+> resuelve la ruta real del clon (vía `git rev-parse --show-toplevel`) y renderiza la unit,
+> así que la Pi puede clonar en cualquier ruta sin editar nada a mano. Los scripts `*.sh`
+> ya derivan su ubicación solos.
 
 ### ✅ Probar los componentes por separado (diagnóstico)
 
@@ -170,29 +186,29 @@ Si el despliegue falla, prueba cada pieza de forma aislada para localizar el pro
 
 ```bash
 # A) ¿El Hailo funciona? (no necesita cámara — corre YOLO sobre una imagen de prueba)
-python3 detection/test_hailo_person.py            # debe imprimir nº de personas detectadas
+python3 v1/detection/test_hailo_person.py         # debe imprimir nº de personas detectadas
 hailortcli fw-control identify                    # debe responder "Hailo-8"
 
 # B) ¿La cámara está y se le activa el RTSP?
-bash rtsp-enable/rtsp_enable_final.sh             # debe terminar en "RTSP activado en <IP>"
+bash v1/rtsp-enable/rtsp_enable_final.sh          # debe terminar en "RTSP activado en <IP>"
 
-# C) ¿El stream RTSP entrega vídeo? (usa la IP que reportó el paso B, en rtsp-enable/CAM_IP)
-#    Aporta la credencial por entorno (export CAM_PASS=<codigo>) o fichero rtsp-enable/CAM_PASS.
-CAM_PASS="${CAM_PASS:-$(cat rtsp-enable/CAM_PASS 2>/dev/null)}"   # nunca un literal en el repo
-ffprobe -rtsp_transport tcp "rtsp://admin:${CAM_PASS}@$(cat rtsp-enable/CAM_IP):554/Streaming/Channels/101"
+# C) ¿El stream RTSP entrega vídeo? (usa la IP que reportó el paso B, en v1/rtsp-enable/CAM_IP)
+#    Aporta la credencial por entorno (export CAM_PASS=<codigo>) o fichero v1/rtsp-enable/CAM_PASS.
+CAM_PASS="${CAM_PASS:-$(cat v1/rtsp-enable/CAM_PASS 2>/dev/null)}"   # nunca un literal en el repo
+ffprobe -rtsp_transport tcp "rtsp://admin:${CAM_PASS}@$(cat v1/rtsp-enable/CAM_IP):554/Streaming/Channels/101"
 
 # D) ¿La detección corre en primer plano? (para ver errores directamente)
-bash rtsp-enable/start_detection.sh               # Ctrl-C para parar; busca "RTSP abierto"
+bash v1/rtsp-enable/start_detection.sh            # Ctrl-C para parar; busca "RTSP abierto"
 ```
 
 ### Reconstruir desde cero (sin el backup S3)
 
 ```bash
 sudo apt install -y box64 default-jdk-headless qemu-user-static
-cd rtsp-enable && ./gradlew --no-daemon jar collectDeps    # jar + deps (desde src/)
+cd v1/rtsp-enable && ./gradlew --no-daemon jar collectDeps    # jar + deps (desde src/)
 # lib/  -> de https://github.com/ylemoigne/ezviz-enable-rtsp (su carpeta lib/)
 # x64root/ -> dpkg-deb -x de libc6/libstdc++6/zlib1g:amd64 + JRE Temurin 21 x64
-#             (pasos detallados en docs/HALLAZGOS.md)
+#             (pasos detallados en v1/docs/HALLAZGOS.md)
 ```
 
 ## 🙌 Créditos

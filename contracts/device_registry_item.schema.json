@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cam-counter/contracts/device_registry_item.schema.json",
+  "title": "DeviceRegistryItem",
+  "description": "Item del registro de dispositivos (DynamoDB 'cam-counter-devices', PK=DEVICE#{device_id}, GSI1 por canal CHANNEL#{release_channel}). La nube escribe desired_version (espejo); la Pi escribe reported_version.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "device_id": {
+      "type": "string",
+      "description": "Slug ASCII minúscula del dispositivo (Pi).",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
+    "site_id": {
+      "type": "string",
+      "description": "Slug ASCII minúscula del sitio.",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
+    "camera_ids": {
+      "type": "array",
+      "description": "Cámaras del dispositivo. Cada camera_id es un slug global único '{device_id}-cam{N}'.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+      }
+    },
+    "release_channel": {
+      "type": "string",
+      "enum": ["canary", "stable"],
+      "description": "Canal de release al que está suscrito el dispositivo."
+    },
+    "desired_version": {
+      "type": "string",
+      "description": "SemVer. Lo escribe la NUBE = versión del manifiesto del canal. Es un ESPEJO de observabilidad: el update-agent NUNCA lo lee del registry para decidir actualizar (la única fuente de la versión deseada es el manifiesto del canal en S3)."
+    },
+    "reported_version": {
+      "type": "string",
+      "description": "SemVer de la versión actualmente instalada, reportada por la Pi."
+    },
+    "last_good_version": {
+      "type": "string",
+      "description": "SemVer de la última versión que pasó el health-check (objetivo de auto-rollback)."
+    },
+    "last_update_status": {
+      "type": "string",
+      "enum": ["idle", "downloading", "verifying", "activating", "healthy", "rolled_back", "failed"],
+      "description": "Estado de la última operación de actualización OTA."
+    },
+    "last_update_error": {
+      "type": ["string", "null"],
+      "description": "Mensaje del último error de actualización, o null."
+    },
+    "last_seen_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Último heartbeat del dispositivo (ISO-8601 UTC)."
+    },
+    "agent_version": {
+      "type": "string",
+      "description": "Versión del update-agent que corre en la Pi."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["online", "offline", "updating", "degraded"],
+      "description": "Estado operativo del dispositivo."
+    },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Información de hardware del dispositivo.",
+      "properties": {
+        "model": { "type": "string", "description": "Modelo del Pi, p.ej. 'Raspberry Pi 5'." },
+        "hailo_fw": { "type": "string", "description": "Versión de firmware del acelerador Hailo." }
+      },
+      "required": ["model", "hailo_fw"]
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Versión del schema. Cualquier rename de campo es BREAKING y requiere bump."
+    }
+  },
+  "required": [
+    "device_id",
+    "site_id",
+    "release_channel",
+    "schema_version"
+  ]
+}
