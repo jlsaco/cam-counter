@@ -1,29 +1,61 @@
 # ───── Binarios pesados / regenerables (se quedan en disco, fuera de git) ─────
 
 # Sysroot amd64 + JRE x86-64 para box64 (~175 MB) — se reconstruye (ver README)
-rtsp-enable/x64root/
+v1/rtsp-enable/x64root/
 
 # SDK nativo Hikvision x86-64 (~26 MB, binarios de terceros)
-rtsp-enable/lib/
+v1/rtsp-enable/lib/
 
 # Artefactos descargados / construidos (regenerables con gradle / apt / curl)
-rtsp-enable/*.jar
-rtsp-enable/jre-x64.tar.gz
-rtsp-enable/*.deb
-rtsp-enable/.build.gradle/
-rtsp-enable/.gradle/
+v1/rtsp-enable/*.jar
+v1/rtsp-enable/jre-x64.tar.gz
+v1/rtsp-enable/*.deb
+v1/rtsp-enable/.build.gradle/
+v1/rtsp-enable/.gradle/
+
+# ───── Credenciales (NUNCA en git) ─────
+# Código de verificación de la cámara (contraseña de admin para SDK/RTSP).
+# Se inyecta por entorno $CAM_PASS o por este fichero local; jamás versionado.
+v1/rtsp-enable/CAM_PASS
+v1/rtsp-enable/secrets/
 
 # ───── Runtime / estado / logs ─────
-rtsp-enable/sdklog/
-rtsp-enable/CAM_IP
-rtsp-enable/RTSP_URL
-rtsp-enable/*.flag
-rtsp-enable/*.log
+v1/rtsp-enable/sdklog/
+v1/rtsp-enable/CAM_IP
+v1/rtsp-enable/RTSP_URL
+v1/rtsp-enable/*.flag
+v1/rtsp-enable/*.log
 *.log
 
 # ───── Python ─────
 __pycache__/
 *.pyc
+*.egg-info/
+.eggs/
+build/
+.pytest_cache/
+.ruff_cache/
+# Entornos virtuales locales (la verificación usa un venv efímero).
+.venv/
+venv/
+
+# ───── Terraform ─────
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+crash.log
+# Planes binarios guardados (-out): los genera el runner al aplicar; jamás se commitean.
+tfplan*
+*.tfplan
+
+# ───── Node / Vite ─────
+node_modules/
+dist/
+.vite/
+*.local
 
 # ───── Misc ─────
 *.tmp

@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cam-counter/contracts/line_config.schema.json",
+  "title": "LineConfig",
+  "description": "Config de la línea-umbral de conteo por cámara. Vive en LOCAL; cambiarla NO reinicia el servicio: el pipeline la relee al detectar un config_version mayor (hot-reload). Geometría en floats normalizados 0..1 relativos al frame original, origen arriba-izquierda (nunca píxeles).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "site_id": {
+      "type": "string",
+      "description": "Slug ASCII minúscula del sitio.",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
+    "device_id": {
+      "type": "string",
+      "description": "Slug ASCII minúscula del dispositivo (Pi).",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
+    "camera_id": {
+      "type": "string",
+      "description": "Slug ASCII minúscula, globalmente único, con forma '{device_id}-cam{N}'.",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
+    "config_version": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Contador MONÓTONO de la config. El pipeline relee la config cuando observa un config_version mayor (hot-reload sin reinicio). Se refleja en crossing_event.line_version."
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Línea-umbral definida por dos endpoints normalizados a y b.",
+      "properties": {
+        "a": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Endpoint A (normalizado 0..1).",
+          "properties": {
+            "x": { "type": "number", "minimum": 0, "maximum": 1, "description": "Coordenada X normalizada 0..1." },
+            "y": { "type": "number", "minimum": 0, "maximum": 1, "description": "Coordenada Y normalizada 0..1." }
+          },
+          "required": ["x", "y"]
+        },
+        "b": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Endpoint B (normalizado 0..1).",
+          "properties": {
+            "x": { "type": "number", "minimum": 0, "maximum": 1, "description": "Coordenada X normalizada 0..1." },
+            "y": { "type": "number", "minimum": 0, "maximum": 1, "description": "Coordenada Y normalizada 0..1." }
+          },
+          "required": ["x", "y"]
+        }
+      },
+      "required": ["a", "b"]
+    },
+    "positive_side": {
+      "type": "integer",
+      "enum": [-1, 1],
+      "description": "Qué flip de signo del lado de la línea cuenta como direction='in'. Determina el sentido positivo del conteo."
+    },
+    "positive_label": {
+      "type": "string",
+      "description": "Etiqueta humana del sentido positivo, p.ej. 'subieron'."
+    },
+    "negative_label": {
+      "type": "string",
+      "description": "Etiqueta humana del sentido negativo, p.ej. 'bajaron'."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Instante de la última actualización de la config (ISO-8601 UTC)."
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Versión del schema. Cualquier rename de campo es BREAKING y requiere bump."
+    }
+  },
+  "required": [
+    "site_id",
+    "device_id",
+    "camera_id",
+    "config_version",
+    "line",
+    "positive_side",
+    "schema_version"
+  ]
+}

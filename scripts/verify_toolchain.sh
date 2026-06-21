@@ -62,10 +62,10 @@ done
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if command -v gradle >/dev/null 2>&1; then
   log_ok "presente: gradle ($(gradle --version 2>/dev/null | grep -iE '^Gradle' | head -n1))"
-elif [ -x "$repo_root/rtsp-enable/gradlew" ]; then
-  log_ok "presente: wrapper gradlew (rtsp-enable/gradlew)"
+elif [ -x "$repo_root/v1/rtsp-enable/gradlew" ]; then
+  log_ok "presente: wrapper gradlew (v1/rtsp-enable/gradlew)"
 else
-  log_err "falta gradle (ni binario 'gradle' ni wrapper 'rtsp-enable/gradlew')"
+  log_err "falta gradle (ni binario 'gradle' ni wrapper 'v1/rtsp-enable/gradlew')"
   missing+=("gradle")
 fi
 

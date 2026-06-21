@@ -1,0 +1,15 @@
+[Unit]
+Description=Deteccion de personas YOLO/Hailo desde camara EZVIZ RTSP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=__CAM_COUNTER_REPO__/v1/rtsp-enable
+ExecStart=__CAM_COUNTER_REPO__/v1/rtsp-enable/start_detection.sh
+Restart=always
+RestartSec=8
+
+[Install]
+WantedBy=multi-user.target
