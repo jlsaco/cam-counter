@@ -11,6 +11,13 @@ de namespace con ``v1/api`` y ``ota`` en el entorno de CI compartido.
 
 from __future__ import annotations
 
+from .app import (
+    CameraHealth,
+    CameraPipeline,
+    CameraSpec,
+    Supervisor,
+    build_dummy_supervisor,
+)
 from .detector import CONF, HEF_PATH, PERSON_ID, Detector, parse_nms_class
 from .dummy import DummyDetector, default_crossing_script
 from .identifiers import (
@@ -26,6 +33,15 @@ from .identifiers import (
 )
 from .line_counter import LineCounter, compute_event_id, ms_to_iso_utc, signed_side
 from .store import SCHEMA_USER_VERSION, Store
+from .sync import (
+    AwsClients,
+    CloudSyncWorker,
+    DrainResult,
+    SyncConfig,
+    SyncOfflineError,
+    build_boto3_clients,
+    media_key_for,
+)
 from .types import (
     BBOX_ORDER,
     PERSON_CLASS_ID,
@@ -46,9 +62,15 @@ __all__ = [
     "PERSON_ID",
     "SCHEMA_USER_VERSION",
     "SLUG_PATTERN",
+    "AwsClients",
+    "CameraHealth",
+    "CameraPipeline",
+    "CameraSpec",
+    "CloudSyncWorker",
     "CrossingEvent",
     "Detection",
     "Detector",
+    "DrainResult",
     "DummyDetector",
     "InvalidSlugError",
     "Line",
@@ -56,11 +78,17 @@ __all__ = [
     "LineCounter",
     "Point",
     "Store",
+    "Supervisor",
+    "SyncConfig",
+    "SyncOfflineError",
     "Track",
+    "build_boto3_clients",
+    "build_dummy_supervisor",
     "compute_event_id",
     "default_crossing_script",
     "is_valid_slug",
     "make_camera_id",
+    "media_key_for",
     "ms_to_iso_utc",
     "parse_nms_class",
     "signed_side",

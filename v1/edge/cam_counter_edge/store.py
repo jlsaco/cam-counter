@@ -274,6 +274,40 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # -- sincronización edge->cloud (lo consume el worker cloud-sync) ------
+
+    def get_unsynced_events(self, limit: int = 100) -> list[CrossingEvent]:
+        """Eventos con ``synced=0``, los más ANTIGUOS primero (orden de drenaje).
+
+        El worker cloud-sync (``sync.py``) drena este backlog hacia la nube de
+        forma idempotente y tolerante a offline. El orden ascendente por
+        ``ts_event_ms`` hace que, tras un corte de red, se reenvíen primero los
+        eventos más viejos (FIFO). NO depende de la red: es una lectura LOCAL.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM events WHERE synced = 0 "
+            "ORDER BY ts_event_ms ASC, event_id ASC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        return [self._row_to_event(r) for r in rows]
+
+    def mark_synced(self, event_id: str) -> None:
+        """Marca un evento como sincronizado (``synced=1``). IDEMPOTENTE.
+
+        Re-marcar un evento ya sincronizado es un no-op. Se llama SÓLO tras una
+        subida+conditional-put exitosa (o un duplicado idempotente confirmado),
+        de modo que el evento no se reintente en el siguiente drenaje.
+        """
+        with self._immediate() as cur:
+            cur.execute(
+                "UPDATE events SET synced = 1 WHERE event_id = ?", (event_id,)
+            )
+
+    @staticmethod
+    def _row_to_event(row: sqlite3.Row) -> CrossingEvent:
+        """Reconstruye un ``CrossingEvent`` desde una fila de ``events``."""
+        return CrossingEvent(**{col: row[col] for col in _EVENT_COLUMNS})
+
     # -- contadores -------------------------------------------------------
 
     def bump_counter(

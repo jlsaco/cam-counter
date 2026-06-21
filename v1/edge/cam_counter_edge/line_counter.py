@@ -43,7 +43,7 @@ import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Protocol, cast
 
 from .identifiers import validate_camera_id, validate_device_id, validate_site_id
 from .types import CrossingEvent, LineConfig, Point
@@ -63,7 +63,7 @@ def _as_xy(p: object) -> XY:
     """Normaliza un extremo/centroide a ``(x, y)`` (acepta ``Point`` o par)."""
     if isinstance(p, Point):
         return (float(p.x), float(p.y))
-    x, y = p  # type: ignore[misc]  # par (x, y) o secuencia de 2 floats
+    x, y = cast("tuple[float, float]", p)  # par (x, y) o secuencia de 2 floats
     return (float(x), float(y))
 
 
@@ -112,10 +112,17 @@ class _SeqSource(Protocol):
 
 
 class _TrackLike(Protocol):
-    """Forma mínima de un track vivo: ``track_id`` + ``centroid`` normalizado."""
+    """Forma mínima de un track vivo: ``track_id`` + ``centroid`` normalizado.
 
-    track_id: object
-    centroid: XY
+    Miembros de SÓLO LECTURA (propiedades) para que el protocolo sea covariante:
+    así un ``tracker.Track`` (con ``track_id: int`` y ``centroid: tuple``) encaja
+    estructuralmente sin la invarianza de los atributos mutables de Protocol.
+    """
+
+    @property
+    def track_id(self) -> object: ...
+    @property
+    def centroid(self) -> XY: ...
 
 
 @dataclass
