@@ -33,13 +33,37 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from .identifiers import validate_camera_id, validate_device_id, validate_site_id
-from .types import CrossingEvent
+from .types import CrossingEvent, Line, LineConfig, Point
 
-__all__ = ["SCHEMA_USER_VERSION", "Store"]
+__all__ = ["SCHEMA_USER_VERSION", "StaleConfigVersionError", "Store"]
 
 # Versión de esquema física de SQLite (PRAGMA user_version). Es independiente de
 # CrossingEvent.schema_version (versión del contrato lógico).
-SCHEMA_USER_VERSION = 1
+#
+# Historial de migraciones (todas ADITIVAS; DDL ``IF NOT EXISTS``):
+#   v1 (PR07): events, counters, crossing_seq.
+#   v2 (PR08): camera_config (config de línea por cámara, config_version
+#              monótono) + clip_uploads (cola de subidas a S3).
+SCHEMA_USER_VERSION = 2
+
+
+class StaleConfigVersionError(RuntimeError):
+    """``set_line_config`` con ``expected_version`` desactualizada (CAS fallido).
+
+    Concurrencia optimista: un escritor sólo gana si su ``expected_version``
+    coincide con el ``config_version`` ACTUAL en la DB. Si otro escritor ya
+    bumpeó la versión, el ``expected_version`` queda stale y se rechaza el
+    cambio (el caller debe releer la config y reintentar).
+    """
+
+    def __init__(self, camera_id: str, expected: int, current: int) -> None:
+        self.camera_id = camera_id
+        self.expected = int(expected)
+        self.current = int(current)
+        super().__init__(
+            f"config_version stale para {camera_id!r}: "
+            f"expected={self.expected}, actual={self.current}"
+        )
 
 # Columnas de ``events`` = campos de CrossingEvent (orden estable para INSERT).
 _EVENT_COLUMNS = (
@@ -103,12 +127,72 @@ CREATE TABLE IF NOT EXISTS crossing_seq (
     camera_id  TEXT PRIMARY KEY,
     seq        INTEGER NOT NULL
 );
+
+-- v2 (PR08): config de línea por cámara. ``config_version`` es un entero
+-- MONÓTONO por cámara (concurrencia optimista vía CAS en set_line_config).
+-- Geometría en floats normalizados 0..1 (extremos A=(line_ax,line_ay),
+-- B=(line_bx,line_by)); NUNCA píxeles.
+CREATE TABLE IF NOT EXISTS camera_config (
+    camera_id       TEXT PRIMARY KEY,
+    site_id         TEXT NOT NULL,
+    device_id       TEXT NOT NULL,
+    line_ax         REAL NOT NULL,
+    line_ay         REAL NOT NULL,
+    line_bx         REAL NOT NULL,
+    line_by         REAL NOT NULL,
+    positive_side   INTEGER NOT NULL,
+    positive_label  TEXT,
+    negative_label  TEXT,
+    config_version  INTEGER NOT NULL,
+    schema_version  INTEGER NOT NULL DEFAULT 1,
+    updated_at      TEXT
+);
+
+-- v2 (PR08): cola local de subidas de clips a S3 (la subida real es PR10).
+-- ``s3_key_planned`` se construye desde la plantilla de media SÓLO con slugs
+-- ya validados. ``status`` ∈ {'pending','uploading','uploaded','failed'}.
+CREATE TABLE IF NOT EXISTS clip_uploads (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id        TEXT NOT NULL,
+    camera_id       TEXT NOT NULL,
+    local_path      TEXT NOT NULL,
+    s3_key_planned  TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT,
+    updated_at      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_clip_uploads_status
+    ON clip_uploads (status, id);
 """
 
 
 def _ms_to_day_utc(ts_event_ms: int) -> str:
     """Día UTC ``YYYY-MM-DD`` derivado del epoch ms (determinista, sin reloj)."""
     return datetime.fromtimestamp(ts_event_ms / 1000.0, tz=UTC).strftime("%Y-%m-%d")
+
+
+def _now_iso() -> str:
+    """Timestamp ISO-8601 UTC (ms) de pared para metadatos (``updated_at``).
+
+    Sólo se usa para campos de auditoría (cuándo se cambió la config / se encoló
+    una subida); NO entra en ningún contrato determinista (``event_id`` y demás
+    se derivan de ``ts_event_ms``, no del reloj).
+    """
+    return (
+        datetime.now(UTC)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def _point_xy(p: object) -> tuple[float, float]:
+    """Extrae ``(x, y)`` de un ``Point`` o de un par ``(x, y)`` (robusto)."""
+    if isinstance(p, Point):
+        return (float(p.x), float(p.y))
+    x, y = p  # type: ignore[misc]
+    return (float(x), float(y))
 
 
 class Store:
@@ -306,3 +390,165 @@ class Store:
                 (camera_id, day_utc),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # -- config de línea por cámara (hot-reload vía config_version) --------
+
+    def get_config_version(self, camera_id: str) -> int:
+        """``config_version`` ACTUAL de la cámara (0 si no hay config todavía).
+
+        Lectura BARATA de una sola columna pensada para llamarse UNA VEZ POR
+        FRAME desde el ``ConfigWatcher``: es un ``SELECT`` simple sobre WAL (no
+        toma lock de escritura, no bloquea al único escritor). Devolver 0 ante
+        la ausencia de fila permite que el primer ``set_line_config`` use
+        ``expected_version=0`` y obtenga ``config_version=1``.
+        """
+        validate_camera_id(camera_id)
+        row = self._conn.execute(
+            "SELECT config_version FROM camera_config WHERE camera_id = ?",
+            (camera_id,),
+        ).fetchone()
+        return int(row["config_version"]) if row is not None else 0
+
+    def get_line_config(self, camera_id: str) -> LineConfig | None:
+        """Devuelve el ``LineConfig`` persistido de la cámara, o ``None``."""
+        validate_camera_id(camera_id)
+        row = self._conn.execute(
+            "SELECT * FROM camera_config WHERE camera_id = ?", (camera_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return LineConfig(
+            site_id=row["site_id"],
+            device_id=row["device_id"],
+            camera_id=row["camera_id"],
+            config_version=int(row["config_version"]),
+            line=Line(
+                a=Point(float(row["line_ax"]), float(row["line_ay"])),
+                b=Point(float(row["line_bx"]), float(row["line_by"])),
+            ),
+            positive_side=int(row["positive_side"]),
+            positive_label=row["positive_label"],
+            negative_label=row["negative_label"],
+            updated_at=row["updated_at"],
+            schema_version=int(row["schema_version"]),
+        )
+
+    def set_line_config(
+        self, camera_id: str, config: LineConfig, expected_version: int
+    ) -> int:
+        """Persiste la config de línea con CONCURRENCIA OPTIMISTA (compare-and-set).
+
+        Sólo escribe si ``expected_version`` coincide con el ``config_version``
+        ACTUAL en la DB (0 si la fila no existe aún); en caso contrario lanza
+        ``StaleConfigVersionError`` SIN tocar nada. En éxito INCREMENTA
+        ``config_version`` monótonamente (``actual + 1``), actualiza la geometría
+        y ``updated_at``, y devuelve el NUEVO ``config_version``.
+
+        El ``config_version`` lo gobierna la DB: el valor del campo homónimo en
+        ``config`` se IGNORA en la escritura (la geometría/labels/positive_side
+        sí se toman de ``config``). Atómico para el único escritor vía
+        ``BEGIN IMMEDIATE``.
+        """
+        validate_camera_id(camera_id)
+        validate_site_id(config.site_id)
+        validate_device_id(config.device_id)
+        if config.positive_side not in (-1, 1):
+            raise ValueError(
+                f"positive_side debe ser -1 o +1, no {config.positive_side!r}"
+            )
+        ax, ay = _point_xy(config.line.a)
+        bx, by = _point_xy(config.line.b)
+        now = _now_iso()
+        with self._immediate() as cur:
+            row = cur.execute(
+                "SELECT config_version FROM camera_config WHERE camera_id = ?",
+                (camera_id,),
+            ).fetchone()
+            current = int(row["config_version"]) if row is not None else 0
+            if int(expected_version) != current:
+                raise StaleConfigVersionError(camera_id, expected_version, current)
+            new_version = current + 1
+            cur.execute(
+                "INSERT INTO camera_config ("
+                " camera_id, site_id, device_id, line_ax, line_ay, line_bx, line_by,"
+                " positive_side, positive_label, negative_label, config_version,"
+                " schema_version, updated_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(camera_id) DO UPDATE SET "
+                " site_id=excluded.site_id, device_id=excluded.device_id,"
+                " line_ax=excluded.line_ax, line_ay=excluded.line_ay,"
+                " line_bx=excluded.line_bx, line_by=excluded.line_by,"
+                " positive_side=excluded.positive_side,"
+                " positive_label=excluded.positive_label,"
+                " negative_label=excluded.negative_label,"
+                " config_version=excluded.config_version,"
+                " schema_version=excluded.schema_version,"
+                " updated_at=excluded.updated_at",
+                (
+                    camera_id,
+                    config.site_id,
+                    config.device_id,
+                    ax,
+                    ay,
+                    bx,
+                    by,
+                    int(config.positive_side),
+                    config.positive_label,
+                    config.negative_label,
+                    new_version,
+                    int(config.schema_version),
+                    now,
+                ),
+            )
+        return new_version
+
+    # -- cola de subidas de clips a S3 (clip_uploads) ---------------------
+
+    def enqueue_clip_upload(
+        self,
+        *,
+        event_id: str,
+        camera_id: str,
+        local_path: str,
+        s3_key_planned: str,
+    ) -> int:
+        """Inserta una fila ``pending`` en ``clip_uploads`` y devuelve su ``id``.
+
+        ``s3_key_planned`` debe venir YA construida desde la plantilla de media
+        con slugs validados (ver ``identifiers.media_clip_key``). La subida real
+        (PR10) consumirá estas filas de forma idempotente y reintentable.
+        """
+        validate_camera_id(camera_id)
+        now = _now_iso()
+        with self._immediate() as cur:
+            cur.execute(
+                "INSERT INTO clip_uploads ("
+                " event_id, camera_id, local_path, s3_key_planned, status,"
+                " attempts, created_at, updated_at"
+                ") VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)",
+                (event_id, camera_id, local_path, s3_key_planned, now, now),
+            )
+            rowid = cur.lastrowid
+        return int(rowid)
+
+    def get_clip_uploads(
+        self, camera_id: str | None = None, status: str | None = None
+    ) -> list[dict]:
+        """Filas de ``clip_uploads`` (opcionalmente filtradas), ordenadas por ``id``."""
+        query = (
+            "SELECT id, event_id, camera_id, local_path, s3_key_planned, status, "
+            "attempts, created_at, updated_at FROM clip_uploads"
+        )
+        conds: list[str] = []
+        params: list[object] = []
+        if camera_id is not None:
+            validate_camera_id(camera_id)
+            conds.append("camera_id = ?")
+            params.append(camera_id)
+        if status is not None:
+            conds.append("status = ?")
+            params.append(status)
+        if conds:
+            query += " WHERE " + " AND ".join(conds)
+        query += " ORDER BY id"
+        return [dict(r) for r in self._conn.execute(query, params).fetchall()]

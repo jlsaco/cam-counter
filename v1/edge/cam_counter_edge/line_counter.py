@@ -209,6 +209,31 @@ class LineCounter:
             **kwargs,  # type: ignore[arg-type]
         )
 
+    def set_line(self, config: LineConfig) -> None:
+        """Reconfigura la geometría de la línea EN CALIENTE (hot-reload).
+
+        Actualiza extremos ``a``/``b``, ``positive_side``, etiquetas humanas y
+        ``line_version`` (= ``config.config_version``) sin reiniciar el proceso.
+
+        RESETEA el estado de histéresis por track: los semiplanos ``stable_side``
+        se calcularon contra la línea ANTERIOR y dejan de ser válidos al moverla;
+        conservarlos podría confirmar un "cruce" espurio sólo por el salto de la
+        línea. Arrancar de cero es lo seguro y está documentado. Es un cambio en
+        memoria O(1)+O(tracks vivos): no toca DB, red ni disco.
+        """
+        if config.positive_side not in (-1, 1):
+            raise ValueError(
+                f"positive_side debe ser -1 o +1, no {config.positive_side!r}"
+            )
+        self.a = _as_xy(config.line.a)
+        self.b = _as_xy(config.line.b)
+        self.positive_side = config.positive_side
+        self.positive_label = config.positive_label
+        self.negative_label = config.negative_label
+        self.line_version = config.config_version
+        self.schema_version = config.schema_version
+        self._states.clear()
+
     def process(self, tracks: Iterable[_TrackLike], ts_event_ms: int) -> list[CrossingEvent]:
         """Procesa los tracks vivos de un frame y devuelve los cruces confirmados.
 
