@@ -11,6 +11,15 @@ de namespace con ``v1/api`` y ``ota`` en el entorno de CI compartido.
 
 from __future__ import annotations
 
+from .app import (
+    CameraHealth,
+    CameraPipeline,
+    CameraSpec,
+    DropOldestQueue,
+    HealthServer,
+    ScriptedFrameSource,
+    Supervisor,
+)
 from .clip import ClipEncodeError, ClipRecorder, ClipResult, write_clip
 from .config import ConfigWatcher
 from .detector import CONF, HEF_PATH, PERSON_ID, Detector, parse_nms_class
@@ -30,6 +39,15 @@ from .identifiers import (
 )
 from .line_counter import LineCounter, compute_event_id, ms_to_iso_utc, signed_side
 from .store import SCHEMA_USER_VERSION, StaleConfigVersionError, Store
+from .sync import (
+    CloudSync,
+    CloudSyncConfig,
+    SyncOutcome,
+    SyncResult,
+    TransientSyncError,
+    build_event_item,
+    event_keys,
+)
 from .types import (
     BBOX_ORDER,
     PERSON_CLASS_ID,
@@ -51,24 +69,38 @@ __all__ = [
     "PERSON_ID",
     "SCHEMA_USER_VERSION",
     "SLUG_PATTERN",
+    "CameraHealth",
+    "CameraPipeline",
+    "CameraSpec",
     "ClipEncodeError",
     "ClipRecorder",
     "ClipResult",
+    "CloudSync",
+    "CloudSyncConfig",
     "ConfigWatcher",
     "CrossingEvent",
     "Detection",
     "Detector",
+    "DropOldestQueue",
     "DummyDetector",
+    "HealthServer",
     "InvalidSlugError",
     "Line",
     "LineConfig",
     "LineCounter",
     "Point",
+    "ScriptedFrameSource",
     "StaleConfigVersionError",
     "Store",
+    "Supervisor",
+    "SyncOutcome",
+    "SyncResult",
     "Track",
+    "TransientSyncError",
+    "build_event_item",
     "compute_event_id",
     "default_crossing_script",
+    "event_keys",
     "is_valid_slug",
     "make_camera_id",
     "media_clip_key",

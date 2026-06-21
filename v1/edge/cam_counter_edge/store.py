@@ -358,6 +358,60 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # -- sincronización edge -> cloud (consumido por sync.py) -------------
+
+    def get_unsynced_events(self, limit: int = 200) -> list[dict]:
+        """Eventos pendientes de subir a la nube (``synced=0``), FIFO por inserción.
+
+        Orden ASCENDENTE por ``ts_event_ms`` (y desempate por ``event_id``) para
+        drenar el backlog en el mismo orden en que se contó. La lectura va sobre
+        WAL (no toma lock de escritura), de modo que el worker de sync no compite
+        con el proceso de conteo. La nube nunca dicta este trabajo: la fuente de
+        verdad de "qué falta subir" es SIEMPRE esta tabla local (manifest-no-registry).
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM events WHERE synced = 0 "
+            "ORDER BY ts_event_ms ASC, event_id ASC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_unsynced_events(self) -> int:
+        """Número de eventos aún no sincronizados (``synced=0``)."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM events WHERE synced = 0"
+        ).fetchone()
+        return int(row["n"])
+
+    def mark_event_synced(self, event_id: str) -> bool:
+        """Marca un evento como sincronizado (``synced=1``). Idempotente.
+
+        Returns:
+            ``True`` si actualizó la fila (estaba en 0); ``False`` si no existía o
+            ya estaba en 1. Re-marcar un evento ya sincronizado es un no-op seguro.
+        """
+        with self._immediate() as cur:
+            cur.execute(
+                "UPDATE events SET synced = 1 WHERE event_id = ? AND synced = 0",
+                (event_id,),
+            )
+            return cur.rowcount == 1
+
+    def set_event_clip(
+        self, event_id: str, clip_key: str | None, clip_status: str | None
+    ) -> None:
+        """Actualiza ``clip_key``/``clip_status`` de un evento ya persistido.
+
+        Lo usa el worker de sync para reflejar localmente que el clip quedó subido
+        (``clip_status='uploaded'`` + la clave S3 real) antes/después del
+        conditional-put del evento en DynamoDB.
+        """
+        with self._immediate() as cur:
+            cur.execute(
+                "UPDATE events SET clip_key = ?, clip_status = ? WHERE event_id = ?",
+                (clip_key, clip_status, event_id),
+            )
+
     # -- contadores -------------------------------------------------------
 
     def bump_counter(
@@ -552,3 +606,36 @@ class Store:
             query += " WHERE " + " AND ".join(conds)
         query += " ORDER BY id"
         return [dict(r) for r in self._conn.execute(query, params).fetchall()]
+
+    def get_clip_upload_for_event(self, event_id: str) -> dict | None:
+        """Última fila de ``clip_uploads`` de un ``event_id`` (o ``None`` si no hay).
+
+        El worker de sync la usa para localizar el ``local_path`` del clip y la
+        ``s3_key_planned`` ya construida (con slugs validados) al subir a S3. Toma
+        la de mayor ``id`` por si hubo reintentos de grabación del mismo evento.
+        """
+        row = self._conn.execute(
+            "SELECT id, event_id, camera_id, local_path, s3_key_planned, status, "
+            "attempts, created_at, updated_at FROM clip_uploads "
+            "WHERE event_id = ? ORDER BY id DESC LIMIT 1",
+            (event_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def set_clip_upload_status(
+        self, row_id: int, status: str, *, bump_attempts: bool = False
+    ) -> None:
+        """Actualiza el ``status`` de una fila de ``clip_uploads`` (y ``updated_at``).
+
+        ``status`` ∈ {'pending','uploading','uploaded','failed'}. Con
+        ``bump_attempts`` incrementa el contador de intentos (para el backoff del
+        worker de sync). No falla si la fila no existe (UPDATE no-op).
+        """
+        now = _now_iso()
+        attempts_sql = ", attempts = attempts + 1" if bump_attempts else ""
+        with self._immediate() as cur:
+            cur.execute(
+                f"UPDATE clip_uploads SET status = ?, updated_at = ?{attempts_sql} "
+                "WHERE id = ?",
+                (status, now, int(row_id)),
+            )
