@@ -229,7 +229,16 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "~> 1.5"
+          # Pin EXACTO (no constraint) a la versión del RUNNER MAD que ejecuta el `apply`:
+          # el state de prod en S3 lo escribe 1.15.6 y `terraform plan` exige una versión
+          # >= a la que escribió el state. Además, >= 1.9 es imprescindible porque algún
+          # módulo usa referencias CRUZADAS entre variables en bloques `validation`
+          # (p. ej. media-bucket: expiration_days > transition_ia_days), soportadas desde
+          # TF 1.9. setup-terraform mapea `~> 1.5` a node-semver `~1.5` (= 1.5.x), que es
+          # < 1.9 y < el writer del state: esa era la CAUSA REAL de los checks en rojo
+          # (issue #25), NO el cableado OIDC (que ya estaba correcto). Pin exacto = sin
+          # ambigüedad de resolución. Mantener en sync si el runner sube de versión.
+          terraform_version: "1.15.6"
           terraform_wrapper: false
 
       - name: Formato (fmt -check)
@@ -293,7 +302,16 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "~> 1.5"
+          # Pin EXACTO (no constraint) a la versión del RUNNER MAD que ejecuta el `apply`:
+          # el state de prod en S3 lo escribe 1.15.6 y `terraform plan` exige una versión
+          # >= a la que escribió el state. Además, >= 1.9 es imprescindible porque algún
+          # módulo usa referencias CRUZADAS entre variables en bloques `validation`
+          # (p. ej. media-bucket: expiration_days > transition_ia_days), soportadas desde
+          # TF 1.9. setup-terraform mapea `~> 1.5` a node-semver `~1.5` (= 1.5.x), que es
+          # < 1.9 y < el writer del state: esa era la CAUSA REAL de los checks en rojo
+          # (issue #25), NO el cableado OIDC (que ya estaba correcto). Pin exacto = sin
+          # ambigüedad de resolución. Mantener en sync si el runner sube de versión.
+          terraform_version: "1.15.6"
           terraform_wrapper: false
 
       - name: Configurar credenciales AWS por OIDC (rol PLAN, solo lectura)
