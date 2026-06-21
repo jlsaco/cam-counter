@@ -1,0 +1,25 @@
+[Unit]
+Description=cam-counter OTA update-agent (un ciclo de reconciliación pull-based)
+After=network-online.target
+Wants=network-online.target
+# El producto debe poder existir/instalarse sin estar este servicio activo; lo dispara el
+# timer (cam-counter-update.timer), no se arranca solo.
+
+[Service]
+Type=oneshot
+# Necesita root para el swap atómico del symlink en /opt/cam-counter y `systemctl restart`.
+User=root
+# El update-agent vive en una ubicación PROVISIONADA, NO dentro del bundle OTA que actualiza
+# (evita el chicken-and-egg de que el agente se reemplace a sí mismo a mitad de un update).
+# El instalador de provisioning sustituye __CAM_COUNTER_AGENT_DIR__ por la ruta real del
+# directorio que contiene el paquete `agent/` (mismo patrón de render que __CAM_COUNTER_REPO__).
+WorkingDirectory=__CAM_COUNTER_AGENT_DIR__
+Environment=PYTHONPATH=__CAM_COUNTER_AGENT_DIR__
+# El canal asignado y los parámetros se leen de la config LOCAL (shared/agent.toml), NUNCA de
+# la red. La versión deseada se lee SÓLO del manifiesto del canal en S3 (vía SigV4).
+ExecStart=/usr/bin/python3 -m agent
+# Margen para descarga + verificación + ventana de soak del health-check de producto.
+TimeoutStartSec=900
+# Endurecimiento básico (el agente sólo escribe en /opt/cam-counter).
+NoNewPrivileges=true
+ProtectSystem=full

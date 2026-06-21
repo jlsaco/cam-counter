@@ -35,6 +35,16 @@
     "python": {
       "type": "string",
       "description": "Versión objetivo de Python (opcional)."
+    },
+    "native_blob": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Referencia (key+sha256) al blob nativo (box64 sysroot / .hef / libs SDK), que NO va embebido en el tarball: vive en S3 y se descarga aparte. Misma forma que el native_blob del channel-manifest. Opcional: un bundle puede no requerir blob nativo.",
+      "properties": {
+        "key": { "type": "string", "description": "Clave S3 del blob nativo." },
+        "sha256": { "type": "string", "description": "SHA-256 hex del blob nativo.", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "required": ["key", "sha256"]
     }
   },
   "required": [

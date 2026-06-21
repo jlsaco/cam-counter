@@ -1,0 +1,18 @@
+[Unit]
+Description=Dispara periódicamente el update-agent OTA de cam-counter (pull-based)
+
+[Timer]
+# Primer chequeo poco después del arranque (deja que el producto levante primero).
+OnBootSec=3min
+# Cadencia de reconciliación.
+OnUnitActiveSec=15min
+# JITTER: dispersa los disparos de toda la flota para no hacer thundering-herd al bucket de
+# releases ni a la red al publicarse una versión nueva.
+RandomizedDelaySec=5min
+# Persistent: si la Pi estuvo apagada/offline cuando tocaba el disparo, lo ejecuta al volver
+# (converge a la versión current del canal con UN solo salto, sin cola de versiones).
+Persistent=true
+Unit=cam-counter-update.service
+
+[Install]
+WantedBy=timers.target
