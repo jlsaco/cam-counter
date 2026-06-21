@@ -63,8 +63,7 @@ def _as_xy(p: object) -> XY:
     """Normaliza un extremo/centroide a ``(x, y)`` (acepta ``Point`` o par)."""
     if isinstance(p, Point):
         return (float(p.x), float(p.y))
-    x, y = p  # type: ignore[misc]  # par (x, y) o secuencia de 2 floats
-    return (float(x), float(y))
+    return (float(p[0]), float(p[1]))  # type: ignore[index]  # par/secuencia de 2 floats
 
 
 def signed_side(a: object, b: object, p: object) -> int:

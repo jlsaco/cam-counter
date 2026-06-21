@@ -191,8 +191,36 @@ def _point_xy(p: object) -> tuple[float, float]:
     """Extrae ``(x, y)`` de un ``Point`` o de un par ``(x, y)`` (robusto)."""
     if isinstance(p, Point):
         return (float(p.x), float(p.y))
-    x, y = p  # type: ignore[misc]
-    return (float(x), float(y))
+    return (float(p[0]), float(p[1]))  # type: ignore[index]  # par/secuencia de 2 floats
+
+
+def _row_to_event(row: sqlite3.Row) -> CrossingEvent:
+    """Reconstruye un ``CrossingEvent`` desde una fila de ``events``.
+
+    Los nombres de columna coinciden 1:1 con los campos del dataclass (orden de
+    ``_EVENT_COLUMNS``), así que la conversión es directa y sin pérdida.
+    """
+    return CrossingEvent(
+        event_id=row["event_id"],
+        site_id=row["site_id"],
+        device_id=row["device_id"],
+        camera_id=row["camera_id"],
+        track_id=row["track_id"],
+        crossing_seq=int(row["crossing_seq"]),
+        direction=row["direction"],
+        ts_event_ms=int(row["ts_event_ms"]),
+        ts_event_iso=row["ts_event_iso"],
+        positive_label=row["positive_label"],
+        negative_label=row["negative_label"],
+        label=row["label"],
+        line_version=row["line_version"],
+        confidence=row["confidence"],
+        clip_key=row["clip_key"],
+        clip_status=row["clip_status"],
+        synced=int(row["synced"]),
+        created_at=row["created_at"],
+        schema_version=int(row["schema_version"]),
+    )
 
 
 class Store:
@@ -547,7 +575,7 @@ class Store:
                 (event_id, camera_id, local_path, s3_key_planned, now, now),
             )
             rowid = cur.lastrowid
-        return int(rowid)
+        return int(rowid) if rowid is not None else 0
 
     def get_clip_uploads(
         self, camera_id: str | None = None, status: str | None = None
@@ -570,3 +598,90 @@ class Store:
             query += " WHERE " + " AND ".join(conds)
         query += " ORDER BY id"
         return [dict(r) for r in self._conn.execute(query, params).fetchall()]
+
+    def get_clip_upload_for_event(self, event_id: str) -> dict | None:
+        """Última fila de ``clip_uploads`` de un ``event_id`` (o ``None``).
+
+        El worker de cloud-sync (PR10) la consulta para localizar el clip local
+        (``local_path``) y su clave S3 planificada (``s3_key_planned``) antes de
+        subirlo. Se devuelve la MÁS RECIENTE por si hubo reencolados.
+        """
+        row = self._conn.execute(
+            "SELECT id, event_id, camera_id, local_path, s3_key_planned, status, "
+            "attempts, created_at, updated_at FROM clip_uploads "
+            "WHERE event_id = ? ORDER BY id DESC LIMIT 1",
+            (event_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def set_clip_upload_status(
+        self, row_id: int, status: str, *, increment_attempts: bool = False
+    ) -> None:
+        """Actualiza el ``status`` de una fila de ``clip_uploads`` (y ``attempts``).
+
+        ``status`` ∈ {'pending','uploading','uploaded','failed'}. El worker de
+        sync marca 'uploading' antes de subir (incrementando ``attempts``) y
+        'uploaded'/'failed' al terminar. Atómico para el único escritor.
+        """
+        now = _now_iso()
+        with self._immediate() as cur:
+            if increment_attempts:
+                cur.execute(
+                    "UPDATE clip_uploads SET status = ?, attempts = attempts + 1, "
+                    "updated_at = ? WHERE id = ?",
+                    (status, now, int(row_id)),
+                )
+            else:
+                cur.execute(
+                    "UPDATE clip_uploads SET status = ?, updated_at = ? WHERE id = ?",
+                    (status, now, int(row_id)),
+                )
+
+    # -- sincronización edge -> cloud (worker de cloud-sync, PR10) --------
+
+    def get_unsynced_events(self, limit: int = 100) -> list[CrossingEvent]:
+        """Eventos con ``synced=0`` listos para sincronizar a la nube.
+
+        Orden ASCENDENTE por ``ts_event_ms`` (drena el backlog del más antiguo al
+        más nuevo). Devuelve ``CrossingEvent`` reconstruidos desde la fila para
+        que el worker reutilice el mismo tipo de contrato. Es una LECTURA (no toma
+        lock de escritura): no bloquea el camino de conteo.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM events WHERE synced = 0 "
+            "ORDER BY ts_event_ms ASC, event_id ASC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        return [_row_to_event(row) for row in rows]
+
+    def count_unsynced_events(self) -> int:
+        """Número de eventos pendientes de sincronizar (``synced=0``)."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM events WHERE synced = 0"
+        ).fetchone()
+        return int(row["n"])
+
+    def mark_event_synced(self, event_id: str) -> bool:
+        """Marca un evento como sincronizado (``synced=1``). Idempotente.
+
+        Returns:
+            ``True`` si la fila existía y se actualizó (incluido el caso en que ya
+            estaba en 1: el ``UPDATE`` casa la fila igual); ``False`` si no hay
+            ninguna fila con ese ``event_id``.
+        """
+        with self._immediate() as cur:
+            cur.execute(
+                "UPDATE events SET synced = 1 WHERE event_id = ?", (event_id,)
+            )
+            updated = cur.rowcount >= 1
+        return updated
+
+    def set_event_clip_key(
+        self, event_id: str, clip_key: str, clip_status: str = "uploaded"
+    ) -> None:
+        """Fija ``clip_key``/``clip_status`` de un evento tras subir su clip a S3."""
+        with self._immediate() as cur:
+            cur.execute(
+                "UPDATE events SET clip_key = ?, clip_status = ? WHERE event_id = ?",
+                (clip_key, clip_status, event_id),
+            )

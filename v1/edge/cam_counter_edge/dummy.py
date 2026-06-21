@@ -20,12 +20,60 @@ def default_crossing_script() -> list[list[Detection]]:
     Seis frames con una sola persona cuyo centroide avanza por x = 0.10 -> 0.90,
     cruzando la mitad (x = 0.5). Útil como caso canónico para el conteo de cruce
     de línea de PR06+. Geometría en floats normalizados 0..1.
+
+    NOTA: los saltos entre frames consecutivos son grandes (sin solape de cajas),
+    así que un tracker por IoU (``CentroidIoUTracker``) NO mantiene un mismo
+    ``track_id`` a lo largo de la secuencia (cada frame crea un track nuevo). Es
+    deliberado para los tests unitarios del ``LineCounter`` (que reciben los tracks
+    ya construidos). Para una fuente END-TO-END que SÍ produzca cruces a través del
+    tracker (fuente falsa / supervisor / E2E), usa ``smooth_crossing_script``.
     """
     centers_x = [0.10, 0.30, 0.45, 0.55, 0.70, 0.90]
     script: list[list[Detection]] = []
     for cx in centers_x:
         det = Detection(
             bbox_norm=[cx - 0.05, 0.40, cx + 0.05, 0.60],
+            class_id=PERSON_CLASS_ID,
+            confidence=0.90,
+        )
+        script.append([det])
+    return script
+
+
+def smooth_crossing_script(
+    *,
+    start: float = 0.20,
+    end: float = 0.80,
+    steps: int = 16,
+    width: float = 0.16,
+    height: float = 0.40,
+    cy: float = 0.5,
+) -> list[list[Detection]]:
+    """Secuencia FINA de una persona cruzando L->R que un tracker IoU SÍ sigue.
+
+    A diferencia de ``default_crossing_script``, los pasos son lo bastante pequeños
+    para que las cajas consecutivas se SOLAPEN (IoU alto), de modo que el
+    ``CentroidIoUTracker`` mantiene un ``track_id`` ESTABLE a lo largo del cruce y
+    el ``LineCounter`` (con histéresis ``min_frames>=2``) confirma EXACTAMENTE un
+    cruce por pasada. Con ``loop=True`` el salto del final (``end``) al inicio
+    (``start``) NO solapa, así que el tracker arranca un track nuevo en cada vuelta
+    (un cruce limpio por ciclo): incrementos deterministas para la fuente falsa y
+    los E2E. Geometría en floats normalizados 0..1, origen arriba-izquierda.
+    """
+    if steps < 2:
+        raise ValueError(f"steps debe ser >= 2, no {steps!r}")
+    half_w = width / 2.0
+    half_h = height / 2.0
+    script: list[list[Detection]] = []
+    for i in range(steps):
+        cx = start + (end - start) * (i / (steps - 1))
+        det = Detection(
+            bbox_norm=[
+                round(cx - half_w, 4),
+                round(cy - half_h, 4),
+                round(cx + half_w, 4),
+                round(cy + half_h, 4),
+            ],
             class_id=PERSON_CLASS_ID,
             confidence=0.90,
         )
