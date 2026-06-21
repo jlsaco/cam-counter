@@ -38,6 +38,10 @@ build/
 # Entornos virtuales locales (la verificación usa un venv efímero).
 .venv/
 venv/
+# SQLite local del borde/API (datos de runtime; jamás se commitea).
+*.db
+*.db-wal
+*.db-shm
 
 # ───── Terraform ─────
 **/.terraform/
@@ -53,6 +57,10 @@ tfplan*
 
 # ───── Node / Vite ─────
 node_modules/
+# Artefactos de runtime de Playwright (E2E): reportes y resultados.
+test-results/
+playwright-report/
+.last-run.json
 dist/
 .vite/
 *.local

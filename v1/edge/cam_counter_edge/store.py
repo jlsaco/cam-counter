@@ -374,6 +374,24 @@ class Store:
                 (camera_id, day_utc, direction, int(delta)),
             )
 
+    def reset_counters(self, camera_id: str) -> int:
+        """Pone a cero los contadores de una cámara (borra sus filas de ``counters``).
+
+        Operación administrativa de la etapa ``sink`` (misma capa que
+        ``bump_counter``): NO toca la lógica de detección/tracking/conteo ni el
+        ``crossing_seq`` monótono ni los ``events`` ya persistidos. La expone la
+        API local para el endpoint de reset de contadores (PR09). Atómica para el
+        único escritor vía ``BEGIN IMMEDIATE``.
+
+        Returns:
+            Número de filas de contador eliminadas.
+        """
+        validate_camera_id(camera_id)
+        with self._immediate() as cur:
+            cur.execute("DELETE FROM counters WHERE camera_id = ?", (camera_id,))
+            deleted = cur.rowcount
+        return int(deleted)
+
     def get_counters(self, camera_id: str, day_utc: str | None = None) -> list[dict]:
         """Contadores de la cámara; si ``day_utc`` se da, sólo ese día."""
         validate_camera_id(camera_id)

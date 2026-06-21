@@ -132,6 +132,24 @@ def test_bump_counter_upsert(tmp_path) -> None:
     store.close()
 
 
+def test_reset_counters(tmp_path) -> None:
+    """``reset_counters`` borra los contadores de UNA cámara sin tocar eventos/seq."""
+    store = _open(tmp_path)
+    store.bump_counter("pi-001-cam0", "2026-06-20", "in", 5)
+    store.bump_counter("pi-001-cam0", "2026-06-21", "out", 2)
+    store.bump_counter("pi-001-cam1", "2026-06-20", "in", 3)
+    # También persistimos un evento para comprobar que NO se borra.
+    store.insert_event(_event("e" * 40, camera_id="pi-001-cam0", crossing_seq=1))
+
+    deleted = store.reset_counters("pi-001-cam0")
+    assert deleted == 2  # dos filas (dos días/direcciones) de cam0
+    assert store.get_counters("pi-001-cam0") == []
+    # Otra cámara intacta y los eventos persistidos siguen ahí.
+    assert {r["count"] for r in store.get_counters("pi-001-cam1")} == {3}
+    assert len(store.get_recent_events("pi-001-cam0")) == 1
+    store.close()
+
+
 def test_get_recent_events_order(tmp_path) -> None:
     """``get_recent_events`` ordena por ``ts_event_ms`` descendente."""
     store = _open(tmp_path)
