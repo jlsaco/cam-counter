@@ -26,6 +26,7 @@ jobs:
       edge: ${{ steps.filter.outputs.edge }}
       api: ${{ steps.filter.outputs.api }}
       ui: ${{ steps.filter.outputs.ui }}
+      e2e: ${{ steps.filter.outputs.e2e }}
     steps:
       - uses: actions/checkout@v4
       - id: filter
@@ -46,6 +47,12 @@ jobs:
             ui:
               - 'v1/ui/**'
               - '.github/workflows/ci.yml'
+            e2e:
+              - 'v1/ui/**'
+              - 'v1/api/**'
+              - 'v1/edge/**'
+              - 'contracts/**'
+              - '.github/workflows/ci.yml'
 
   # Paquete edge `cam_counter_edge`: lint + tests en x86 SIN Hailo, SIN cámara,
   # SIN red. El Detector importa `hailo_platform` de forma PEREZOSA y el
@@ -65,17 +72,27 @@ jobs:
       - name: Instalar paquete edge (x86, sin Hailo)
         run: python -m pip install -e "v1/edge[dev]"
 
-      - name: Import sanity (sin hailo_platform instalado)
+      - name: Import sanity (sin hailo_platform/boto3/cv2 instalados)
         run: |
-          python -c "import cam_counter_edge.detector, cam_counter_edge.types, cam_counter_edge.dummy, cam_counter_edge.identifiers; print('imports OK')"
+          python -c "import cam_counter_edge.detector, cam_counter_edge.types, cam_counter_edge.dummy, cam_counter_edge.identifiers, cam_counter_edge.app, cam_counter_edge.sync; print('imports OK')"
 
       - name: Ruff (lint)
         working-directory: v1/edge
         run: ruff check .
 
-      - name: Pytest (sin hardware)
+      - name: Mypy (tipos)
         working-directory: v1/edge
-        run: python -m pytest -q
+        run: mypy cam_counter_edge
+
+      - name: Pytest (sin hardware; supervisor + sync con fakes/DummyDetector)
+        working-directory: v1/edge
+        # La suite integration_aws se SALTA limpiamente sin credenciales (CI sin
+        # OIDC): no rompe el build. `-rs` muestra el motivo del skip.
+        run: python -m pytest -q -rs
+
+      - name: Sync offline -> online (drena backlog sin duplicados, con fakes)
+        working-directory: v1/edge
+        run: python -m pytest -q -k 'idempot or sync_retry or offline or backlog'
 
   # API local `v1/api` (FastAPI): lint + tipos + tests en x86 SIN Hailo/cámara/red,
   # más verificación de NO-drift del snapshot de /api/openapi.json y del alineado
@@ -150,6 +167,55 @@ jobs:
       - name: Build de producción (vite build -> dist/)
         working-directory: v1/ui
         run: npm run build
+
+  # E2E Playwright (headless, x86) contra FastAPI + SPA con la FUENTE FALSA
+  # (CAMCOUNTER_FAKE_SOURCE=1): configurar-línea + persistencia tras recarga +
+  # incremento del contador en vivo por WS. SIN hardware. La suite integration_aws
+  # de AWS NO interviene aquí (es del borde y se salta sin OIDC).
+  e2e:
+    needs: changes
+    if: ${{ needs.changes.outputs.e2e == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # `scripts/version.py` deriva app_version vía git describe
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: v1/ui/package-lock.json
+
+      - name: Instalar borde + deps de la API (para servir la app con fuente falsa)
+        run: |
+          python -m pip install -e v1/edge
+          python -m pip install -r v1/api/requirements.txt
+
+      - name: Instalar deps de la UI + build de producción (dist/ que sirve FastAPI)
+        working-directory: v1/ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Instalar Playwright + navegador (chromium, x86)
+        working-directory: v1/ui/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: E2E headless (fuente falsa; arranca Uvicorn vía webServer)
+        working-directory: v1/ui/e2e
+        env:
+          CI: "1"
+          CAMCOUNTER_FAKE_SOURCE: "1"
+        run: npm test
 
   # Validación estática de Terraform. SIN credenciales AWS. SIN apply ni plan.
   terraform:
