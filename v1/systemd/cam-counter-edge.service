@@ -1,0 +1,32 @@
+[Unit]
+Description=cam-counter edge supervisor (multi-camara, Hailo VDevice compartido) + cloud-sync
+# COEXISTE con el servicio legacy hailo-personas: NO hace cutover. El legacy sigue
+# siendo el servicio activo por defecto; este unit queda definido pero NO se habilita
+# automaticamente. ROLLBACK = re-habilitar hailo-personas (`systemctl enable --now
+# hailo-personas`) y deshabilitar este (`systemctl disable --now cam-counter-edge`).
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+# Sin rutas absolutas fijas: el instalador (scripts/install_edge_service.sh) sustituye
+# __CAM_COUNTER_REPO__ por la ruta REAL del clon (mismo patron de render que
+# hailo-personas / cam-counter-api). WorkingDirectory = v1/edge para que el paquete
+# `cam_counter_edge` sea importable.
+WorkingDirectory=__CAM_COUNTER_REPO__/v1/edge
+ExecStart=__CAM_COUNTER_REPO__/v1/edge/run_edge.sh
+# Variables OPCIONALES (no secretos): ajustar en un drop-in local o aqui.
+#   Environment=CAMCOUNTER_SITE_ID=mi-sitio
+#   Environment=CAMCOUNTER_DEVICE_ID=rpi-001
+#   Environment=CAMCOUNTER_CAMERA_COUNT=3
+#   Environment=CAMCOUNTER_DB_PATH=/var/lib/cam-counter/cam-counter.db
+#   Environment=CAMCOUNTER_HEALTHZ_PORT=8081
+#   Environment=CAMCOUNTER_RTSP_URL=rtsp://...        (credenciales NUNCA en git)
+#   Environment=CAMCOUNTER_SYNC_ENABLED=1             (sync edge->cloud best-effort)
+#   Environment=CAMCOUNTER_EDGE_ROLE_ARN=arn:aws:iam::...:role/cam-counter-edge-...
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

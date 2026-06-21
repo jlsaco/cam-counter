@@ -14,7 +14,7 @@ from __future__ import annotations
 from .clip import ClipEncodeError, ClipRecorder, ClipResult, write_clip
 from .config import ConfigWatcher
 from .detector import CONF, HEF_PATH, PERSON_ID, Detector, parse_nms_class
-from .dummy import DummyDetector, default_crossing_script
+from .dummy import DummyDetector, default_crossing_script, smooth_crossing_script
 from .identifiers import (
     MAX_SLUG_LEN,
     MEDIA_BUCKET,
@@ -75,6 +75,7 @@ __all__ = [
     "ms_to_iso_utc",
     "parse_nms_class",
     "signed_side",
+    "smooth_crossing_script",
     "validate_camera_id",
     "validate_device_id",
     "validate_site_id",

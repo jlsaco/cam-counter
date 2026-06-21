@@ -21,10 +21,16 @@ dependencies = [
   "pillow>=9",
 ]
 
+# Entrypoint del supervisor multi-cámara (PR10). `cam-counter-edge` arranca el
+# proceso de conteo (N pipelines sobre un VDevice Hailo compartido) + /healthz.
+[project.scripts]
+cam-counter-edge = "cam_counter_edge.app:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=7",
   "ruff>=0.4",
+  "mypy>=1.8",
 ]
 # Encoder MP4 opcional (preferido sobre el fallback GIF) para plataformas sin un
 # cv2 utilizable. `imageio-ffmpeg` trae un ffmpeg embebido. Si no está instalado,
@@ -33,10 +39,34 @@ mp4 = [
   "imageio>=2.28",
   "imageio-ffmpeg>=0.4",
 ]
+# SDK AWS para el worker de cloud-sync (sync.py) y la prueba de integración real
+# contra AWS. NO es dependencia base: el módulo importa boto3 de forma PEREZOSA
+# (igual que el Detector con Hailo), así que la lógica se testea en CI con fakes
+# sin boto3. El runner que ejecuta la integración real instala este extra.
+sync = [
+  "boto3>=1.26",
+]
 
 [tool.setuptools]
 # Layout plano: el paquete importable es `cam_counter_edge`. `tests/` queda fuera.
 packages = ["cam_counter_edge"]
+
+[tool.pytest.ini_options]
+# Marker de la suite de integración REAL contra AWS (gated por credenciales). Se
+# registra para evitar warnings de "marker desconocido" y para poder seleccionarla
+# con `-m integration_aws`. Por defecto NO se ejecuta (degrada a SKIP sin
+# credenciales; ver tests/conftest.py para el gating estricto del runner).
+markers = [
+  "integration_aws: prueba de integración end-to-end contra AWS REAL (recursos de PR04); skip sin credenciales",
+]
+
+[tool.mypy]
+# Tipado del paquete de borde. Las dependencias de HARDWARE/opcionales se importan
+# de forma PEREZOSA (Hailo `hailo_platform`, OpenCV `cv2`, `imageio`, `boto3`) y NO
+# traen stubs en el entorno x86/CI: se ignoran sus imports (no son parte de la
+# superficie tipada del paquete). El resto SÍ se chequea.
+python_version = "3.11"
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

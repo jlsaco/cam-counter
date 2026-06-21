@@ -45,6 +45,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 
@@ -100,9 +101,8 @@ def decode_jpeg(data: bytes) -> np.ndarray:
     from PIL import Image  # noqa: PLC0415  (perezoso; decoder de imagen)
 
     img = Image.open(BytesIO(data))
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    return np.asarray(img)
+    rgb = img.convert("RGB") if img.mode != "RGB" else img
+    return np.asarray(rgb)
 
 
 # -- encoders de vídeo (MP4 preferido; fallback GIF) ----------------------
@@ -220,6 +220,19 @@ def write_clip(
 # -- grabador asíncrono ----------------------------------------------------
 
 
+class _ClipUploadStore(Protocol):
+    """Interfaz mínima del store que el ``ClipRecorder`` necesita (encolar subida)."""
+
+    def enqueue_clip_upload(
+        self,
+        *,
+        event_id: str,
+        camera_id: str,
+        local_path: str,
+        s3_key_planned: str,
+    ) -> int: ...
+
+
 @dataclass
 class ClipResult:
     """Resultado de ensamblar y encolar un clip (observabilidad / tests)."""
@@ -270,7 +283,7 @@ class ClipRecorder:
 
     def __init__(
         self,
-        store: object,
+        store: _ClipUploadStore,
         *,
         out_dir: str | Path,
         fps: float = 10.0,

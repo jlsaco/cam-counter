@@ -25,7 +25,7 @@ from cam_counter_edge import (
     LineCounter,
     StaleConfigVersionError,
     Store,
-    default_crossing_script,
+    smooth_crossing_script,
 )
 from cam_counter_edge.tracker import CentroidIoUTracker
 from cam_counter_edge.types import Line, LineConfig, Point
@@ -165,7 +165,10 @@ class FakeSource:
                 config = default_line_config(self._settings, cam)
             counter = LineCounter.from_config(store, config, min_frames=2)
             pipelines[cam] = {
-                "detector": DummyDetector(default_crossing_script(), loop=True),
+                # smooth_crossing_script: pasos finos -> el tracker IoU mantiene un
+                # track_id estable y el LineCounter confirma 1 cruce por pasada
+                # (incrementos deterministas del contador para los E2E por WS).
+                "detector": DummyDetector(smooth_crossing_script(), loop=True),
                 "tracker": CentroidIoUTracker(max_age=3),
                 "counter": counter,
                 "watcher": ConfigWatcher(
