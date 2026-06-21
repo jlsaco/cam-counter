@@ -1,0 +1,33 @@
+# Unit del supervisor multi-cámara `cam-counter-edge` (un Hailo VDevice compartido
+# + worker cloud-sync + /healthz). COEXISTE con `hailo-personas` (NO hay cutover):
+# este unit queda DEFINIDO pero el legacy `hailo-personas` sigue siendo el servicio
+# que arranca por defecto hasta que el orquestador decida el cambio.
+#
+# ROLLBACK declarado: re-habilitar `hailo-personas`
+#   (`systemctl disable --now cam-counter-edge && systemctl enable --now hailo-personas`).
+#
+# RENDER DE RUTAS (igual que `hailo-personas.service`): el instalador reemplaza por
+# `sed` los placeholders antes de instalar el unit (NO hay path absoluto fijo en el
+# repo):
+#   __CAM_COUNTER_REPO__   -> raíz del checkout del monorepo en el Pi
+#   __CAM_COUNTER_PYTHON__ -> intérprete del venv donde está instalado el paquete
+#                              edge (p.ej. .../v1/edge/.venv/bin/python)
+#   __CAM_COUNTER_CONFIG__ -> JSON de cámaras local
+#   __CAM_COUNTER_DB__     -> ruta del SQLite (WAL) local compartido con la API
+
+[Unit]
+Description=cam-counter supervisor multi-camara (Hailo VDevice compartido) + cloud-sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=__CAM_COUNTER_REPO__/v1/edge
+# El entrypoint `cam-counter-edge` (console_scripts) equivale a `python -m cam_counter_edge.app`.
+ExecStart=__CAM_COUNTER_PYTHON__ -m cam_counter_edge.app --config __CAM_COUNTER_CONFIG__ --db __CAM_COUNTER_DB__ --healthz-port 8081
+Restart=always
+RestartSec=8
+
+[Install]
+WantedBy=multi-user.target
