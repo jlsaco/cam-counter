@@ -1,0 +1,14 @@
+{
+  "name": "cam-counter-ui-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "E2E Playwright de la UI (scaffold; suite completa en PR10). Paquete SEPARADO para que el `npm ci` de la UI no descargue navegadores.",
+  "scripts": {
+    "test": "playwright test",
+    "install:browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}

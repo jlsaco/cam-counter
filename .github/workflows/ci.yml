@@ -24,6 +24,8 @@ jobs:
     outputs:
       terraform: ${{ steps.filter.outputs.terraform }}
       edge: ${{ steps.filter.outputs.edge }}
+      api: ${{ steps.filter.outputs.api }}
+      ui: ${{ steps.filter.outputs.ui }}
     steps:
       - uses: actions/checkout@v4
       - id: filter
@@ -35,6 +37,14 @@ jobs:
               - '.github/workflows/ci.yml'
             edge:
               - 'v1/edge/**'
+              - '.github/workflows/ci.yml'
+            api:
+              - 'v1/api/**'
+              - 'v1/edge/**'
+              - 'contracts/**'
+              - '.github/workflows/ci.yml'
+            ui:
+              - 'v1/ui/**'
               - '.github/workflows/ci.yml'
 
   # Paquete edge `cam_counter_edge`: lint + tests en x86 SIN Hailo, SIN cámara,
@@ -66,6 +76,80 @@ jobs:
       - name: Pytest (sin hardware)
         working-directory: v1/edge
         run: python -m pytest -q
+
+  # API local `v1/api` (FastAPI): lint + tipos + tests en x86 SIN Hailo/cámara/red,
+  # más verificación de NO-drift del snapshot de /api/openapi.json y del alineado
+  # de schemas.py con contracts/. Consume el paquete de borde `cam_counter_edge`.
+  api:
+    needs: changes
+    if: ${{ needs.changes.outputs.api == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # `scripts/version.py` deriva app_version vía git describe
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar borde + deps de la API (runtime + dev, fijadas)
+        run: |
+          python -m pip install -e v1/edge
+          python -m pip install -r v1/api/requirements.txt -r v1/api/requirements-dev.txt
+
+      - name: Ruff (lint)
+        working-directory: v1/api
+        run: ruff check .
+
+      - name: Mypy (tipos)
+        working-directory: v1/api
+        run: mypy .
+
+      - name: Pytest (sin hardware; incluye snapshot OpenAPI + alineado contracts/)
+        working-directory: v1/api
+        run: python -m pytest -q
+
+      - name: App importable con la fuente falsa (sin Pi/Hailo/cámara)
+        working-directory: v1/api
+        env:
+          CAMCOUNTER_FAKE_SOURCE: "1"
+        run: python -c 'from app import app; print("paths:", len(app.openapi()["paths"]))'
+
+      - name: OpenAPI snapshot sin drift (regenera y compara con el commiteado)
+        working-directory: v1/api
+        run: |
+          python -m gen_openapi_snapshot
+          git diff --exit-code -- openapi.snapshot.json
+
+  # SPA `v1/ui` (React + TS + Vite + Tailwind): typecheck + build de producción.
+  # El `dist/` resultante lo sirve FastAPI same-origin (no se commitea; gitignored).
+  ui:
+    needs: changes
+    if: ${{ needs.changes.outputs.ui == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: v1/ui/package-lock.json
+
+      - name: Instalar dependencias (lockfile)
+        working-directory: v1/ui
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        working-directory: v1/ui
+        run: npx tsc --noEmit
+
+      - name: Build de producción (vite build -> dist/)
+        working-directory: v1/ui
+        run: npm run build
 
   # Validación estática de Terraform. SIN credenciales AWS. SIN apply ni plan.
   terraform:

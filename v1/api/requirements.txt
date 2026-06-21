@@ -1,0 +1,9 @@
+# Dependencias de runtime de la API local (FastAPI + Uvicorn + Pydantic v2).
+#
+# Versiones FIJADAS (==) para que el snapshot de /api/openapi.json sea
+# REPRODUCIBLE entre dev (ARM64) y CI (x86). El paquete de borde se instala
+# aparte con `pip install -e v1/edge` (provee `cam_counter_edge`, consumido aquí).
+fastapi==0.138.0
+uvicorn[standard]==0.49.0
+pydantic==2.13.4
+pillow>=10

@@ -1,0 +1,24 @@
+[Unit]
+Description=cam-counter API local (FastAPI/Uvicorn) + UI same-origin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+# Sin rutas absolutas fijas: el instalador (scripts/install_api_service.sh)
+# sustituye __CAM_COUNTER_REPO__ por la ruta REAL del clon. WorkingDirectory =
+# v1/api para que `app:app` (layout plano) sea importable.
+WorkingDirectory=__CAM_COUNTER_REPO__/v1/api
+ExecStart=__CAM_COUNTER_REPO__/v1/api/run_api.sh
+# Variables OPCIONALES (no secretos): descomenta/ajusta en un drop-in local o aquí.
+#   Environment=CAMCOUNTER_SITE_ID=mi-sitio
+#   Environment=CAMCOUNTER_DEVICE_ID=pi-001
+#   Environment=CAMCOUNTER_CAMERA_COUNT=3
+#   Environment=CAMCOUNTER_DB_PATH=/var/lib/cam-counter/cam-counter.db
+#   Environment=CAMCOUNTER_API_TOKEN=...   (gate de escritura; NUNCA commitear)
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

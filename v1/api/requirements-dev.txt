@@ -1,0 +1,8 @@
+# Herramientas de CI/desarrollo de la API. `ruff` se FIJA (==) porque añade
+# reglas de lint entre versiones y un floating dejaría el CI rojo de improviso;
+# el resto usa floors estables. Instala además los runtime deps y el paquete de
+# borde:  pip install -e v1/edge -r v1/api/requirements.txt -r v1/api/requirements-dev.txt
+ruff==0.15.18
+mypy>=1.8
+pytest>=7
+httpx>=0.27
