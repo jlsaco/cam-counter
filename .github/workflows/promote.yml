@@ -1,0 +1,94 @@
+name: promote
+
+# Promoción / rollback de canal (workflow_dispatch, prod-Environment-gated).
+#
+# REPOINT-ONLY (SIN rebuild): apunta el manifiesto del canal destino a una versión YA
+# publicada y soakeada. Dos acciones:
+#   - promote-canary-to-stable: promueve la versión candidata de canary a stable, EXIGIENDO
+#     que el gate de salud de canary se cumpla (todos los devices canary healthy en esa
+#     versión, vía fleet-status sobre el registry). Rechaza si no.
+#   - rollback-stable: re-apunta stable a una versión previa ya publicada (rollback de un
+#     clic), sin gate de salud (es una reversión de emergencia).
+#
+# Igual que release.yml: PUBLICA OBJETOS S3 con el rol de DEPLOY OIDC `cam-counter-gha-deploy`
+# gated por Environment. NO ejecuta `terraform apply` (publicar objetos != aplicar infra).
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Acción de promoción"
+        required: true
+        type: choice
+        options:
+          - promote-canary-to-stable
+          - rollback-stable
+      version:
+        description: "Versión SemVer ya publicada (candidata a promover, o destino de rollback)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  RELEASES_BUCKET: ${{ vars.RELEASES_BUCKET || 'cam-counter-fleet-releases-950639281773' }}
+  DEVICES_TABLE: ${{ vars.DEVICES_TABLE || 'cam-counter-devices' }}
+  MIN_AGENT_VERSION: "0.1.0"
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    # Gated: el Environment de producción exige aprobación humana antes de ejecutar.
+    environment: prod
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar deps (boto3 + jsonschema)
+        run: python -m pip install boto3 jsonschema
+
+      - name: Configurar credenciales AWS por OIDC (rol DEPLOY, gated por Environment)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GHA_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: cam-counter-promote
+
+      - name: Gate de salud de canary (sólo al promover canary->stable)
+        if: ${{ inputs.action == 'promote-canary-to-stable' }}
+        run: |
+          set -euo pipefail
+          # RECHAZA la promoción si NO todos los devices canary están healthy en la versión
+          # candidata (drift = la flota aún no soakeó esa versión).
+          python ota/tools/fleet_status.py \
+            --channel canary --table "$DEVICES_TABLE" \
+            --require-healthy-version "${{ inputs.version }}"
+
+      - name: Repoint del canal stable a la versión ya publicada (sin rebuild) + espejo registry
+        run: |
+          set -euo pipefail
+          python scripts/publish_manifest.py \
+            --bucket "$RELEASES_BUCKET" \
+            --channel stable \
+            --version "${{ inputs.version }}" \
+            --repoint-only \
+            --min-agent-version "$MIN_AGENT_VERSION" \
+            --released-by "github-actions:promote:${{ inputs.action }}" \
+            --mirror-registry --devices-table "$DEVICES_TABLE"
+
+      - name: Leer de vuelta y validar el manifiesto stable contra el schema
+        run: |
+          set -euo pipefail
+          aws s3 cp "s3://$RELEASES_BUCKET/channels/stable/manifest.json" /tmp/stable.json
+          python ota/tools/validate_manifest.py \
+            --schema contracts/channel_manifest.schema.json --manifest /tmp/stable.json

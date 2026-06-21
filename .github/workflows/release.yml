@@ -1,0 +1,151 @@
+name: release
+
+# Release OTA firmado (on tag `v*`).
+#
+# Flujo: gate de tests -> build determinista del artefacto -> firma minisign (clave traída en
+# runtime de Secrets Manager vía OIDC, JAMÁS en git/logs) -> upload al bucket de releases ->
+# auto-apunta el canal `canary` (sequence monótono + If-Match) y espeja `desired_version` en
+# el registry -> valida el manifiesto publicado contra el schema.
+#
+# IMPORTANTE (CLAUDE.md §5): este workflow PUBLICA OBJETOS S3 (artefactos + manifiestos) con
+# el rol de DEPLOY OIDC `cam-counter-gha-deploy` gated por Environment. Publicar objetos S3
+# NO es `terraform apply` de infraestructura (el bucket ya lo aplicó el RUNNER MAD). CI sigue
+# plan-only para infra.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  RELEASES_BUCKET: ${{ vars.RELEASES_BUCKET || 'cam-counter-fleet-releases-950639281773' }}
+  DEVICES_TABLE: ${{ vars.DEVICES_TABLE || 'cam-counter-devices' }}
+  MINISIGN_SECRET_ID: ${{ vars.MINISIGN_SECRET_ID || 'cam-counter/minisign-secret-key' }}
+  MIN_AGENT_VERSION: "0.1.0"
+
+jobs:
+  # Gate de tests COMPLETO antes de publicar nada (borde + OTA). CI verde no promueve a la
+  # flota por sí solo, pero un tag NO debe publicar si los tests no pasan.
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe ve los tags -> version.py produce la versión real
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar borde + deps de test OTA
+        run: |
+          python -m pip install -e v1/edge
+          python -m pip install jsonschema boto3 pytest
+
+      - name: Pytest borde (sin hardware)
+        working-directory: v1/edge
+        run: python -m pytest -q -rs
+
+      - name: Pytest OTA (verify pass/fail, soak rollback, schema, version-equality)
+        working-directory: ota
+        run: python -m pytest -q -rs
+
+  publish:
+    needs: gate
+    runs-on: ubuntu-latest
+    # Gated por el Environment de producción (aprobación + secrets/vars del entorno).
+    environment: prod
+    permissions:
+      id-token: write # OIDC para asumir el rol de deploy
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar deps de publicación (boto3 + jsonschema)
+        run: python -m pip install boto3 jsonschema
+
+      - name: Derivar versión (única fuente = tags git vía scripts/version.py)
+        id: ver
+        run: |
+          VERSION="$(python scripts/version.py)"
+          GIT_SHA="$(python scripts/version.py --json | python -c 'import json,sys;print(json.load(sys.stdin)["git_sha"])')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "git_sha=$GIT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Build determinista del artefacto OTA (desde v1/)
+        run: bash scripts/build_edge_artifact.sh dist
+
+      - name: Configurar credenciales AWS por OIDC (rol DEPLOY, gated por Environment)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GHA_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: cam-counter-release
+
+      - name: Instalar minisign
+        run: sudo apt-get update && sudo apt-get install -y minisign
+
+      - name: Firmar el artefacto con la clave de Secrets Manager (NUNCA en git/logs)
+        run: |
+          set -euo pipefail
+          KEYFILE="$RUNNER_TEMP/minisign.key"
+          # La clave es PASSWORDLESS (creada con `minisign -G -W`): así el firmado no bloquea
+          # esperando una passphrase en CI. Se borra inmediatamente tras firmar.
+          aws secretsmanager get-secret-value --secret-id "$MINISIGN_SECRET_ID" \
+            --query SecretString --output text > "$KEYFILE"
+          chmod 600 "$KEYFILE"
+          ART="$EDGE_ARTIFACT_PATH"
+          minisign -S -s "$KEYFILE" -m "$ART" \
+            -t "cam-counter ${{ steps.ver.outputs.version }}" -x "$ART.minisig"
+          shred -u "$KEYFILE" || rm -f "$KEYFILE"
+          echo "firma generada: $ART.minisig"
+
+      - name: Subir artefacto + firma + digest a releases/<version>/
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.version }}"
+          ART="$EDGE_ARTIFACT_PATH"
+          BASE="releases/$VER"
+          NAME="$(basename "$ART")"
+          aws s3 cp "$ART"          "s3://$RELEASES_BUCKET/$BASE/$NAME"
+          aws s3 cp "$ART.sha256"   "s3://$RELEASES_BUCKET/$BASE/$NAME.sha256"
+          aws s3 cp "$ART.minisig"  "s3://$RELEASES_BUCKET/$BASE/$NAME.minisig"
+
+      - name: Publicar manifiesto canary (sequence monótono + If-Match) + espejo registry
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.version }}"
+          ART="$EDGE_ARTIFACT_PATH"
+          NAME="$(basename "$ART")"
+          ART_KEY="releases/$VER/$NAME"
+          python scripts/publish_manifest.py \
+            --bucket "$RELEASES_BUCKET" \
+            --channel canary \
+            --version "$VER" \
+            --artifact-key "$ART_KEY" \
+            --artifact-sha256 "$EDGE_ARTIFACT_SHA256" \
+            --artifact-size "$(wc -c < "$ART" | tr -d ' ')" \
+            --sig-key "$ART_KEY.minisig" \
+            --native-blob-key "${NATIVE_BLOB_KEY:-native/box64-sysroot-arm64.tar.gz}" \
+            --native-blob-sha256 "${NATIVE_BLOB_SHA256:-$(printf '0%.0s' $(seq 64))}" \
+            --git-sha "${{ steps.ver.outputs.git_sha }}" \
+            --min-agent-version "$MIN_AGENT_VERSION" \
+            --released-by "github-actions" \
+            --mirror-registry --devices-table "$DEVICES_TABLE"
+
+      - name: Leer de vuelta y validar el manifiesto canary contra el schema
+        run: |
+          set -euo pipefail
+          aws s3 cp "s3://$RELEASES_BUCKET/channels/canary/manifest.json" /tmp/canary.json
+          python ota/tools/validate_manifest.py \
+            --schema contracts/channel_manifest.schema.json --manifest /tmp/canary.json

@@ -115,3 +115,22 @@ module "iam_edge" {
     managed_by = "mad-runner"
   }
 }
+
+# ═══════════════════════════════════ PR11 — bucket de releases OTA ═══════════════════════════════════
+#
+# Tercer bucket del producto: artefactos OTA + manifiestos de canal. Lo APLICA AUTÓNOMAMENTE
+# el RUNNER MAD en PR11 (F2), compartiendo este state remoto compartido. Apply ESTRICTAMENTE
+# ADITIVO (F1): sólo AÑADE este bucket; no toca recursos de PR02–PR04. Usa el proveedor por
+# defecto (S3 distingue mayúsculas; el esquema F3 dual-case es válido). El nombre se reusa de
+# `local.releases_bucket_name`, el MISMO que iam_edge usa para construir el ARN de lectura
+# SigV4 del agente (channels/* + releases/*), garantizando que política y bucket coinciden.
+module "fleet_releases" {
+  source = "../../modules/fleet-releases"
+
+  bucket_name = local.releases_bucket_name
+
+  tags = {
+    project    = "cam-counter"
+    managed_by = "mad-runner"
+  }
+}

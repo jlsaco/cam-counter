@@ -98,3 +98,18 @@ output "edge_policy_arn" {
   description = "ARN de la política managed least-privilege adjunta al rol per-Pi."
   value       = module.iam_edge.policy_arn
 }
+
+# ───────────────────────── PR11 — bucket de releases OTA ─────────────────────────
+#
+# Fuente canónica del nombre/ARN del bucket de releases para los workflows release/promote
+# (publican objetos S3 con el rol de deploy OIDC) y para herramientas (selftest, fleet-status).
+
+output "releases_bucket_name" {
+  description = "Nombre del bucket S3 de releases OTA + manifiestos de canal (cam-counter-fleet-releases-950639281773)."
+  value       = module.fleet_releases.bucket_name
+}
+
+output "releases_bucket_arn" {
+  description = "ARN del bucket S3 de releases OTA + manifiestos de canal."
+  value       = module.fleet_releases.bucket_arn
+}
