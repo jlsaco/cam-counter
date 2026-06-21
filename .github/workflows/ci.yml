@@ -24,6 +24,8 @@ jobs:
     outputs:
       terraform: ${{ steps.filter.outputs.terraform }}
       edge: ${{ steps.filter.outputs.edge }}
+      api: ${{ steps.filter.outputs.api }}
+      ui: ${{ steps.filter.outputs.ui }}
     steps:
       - uses: actions/checkout@v4
       - id: filter
@@ -35,6 +37,13 @@ jobs:
               - '.github/workflows/ci.yml'
             edge:
               - 'v1/edge/**'
+              - '.github/workflows/ci.yml'
+            api:
+              - 'v1/api/**'
+              - '.github/workflows/ci.yml'
+            ui:
+              - 'v1/ui/**'
+              - 'v1/api/**'
               - '.github/workflows/ci.yml'
 
   # Paquete edge `cam_counter_edge`: lint + tests en x86 SIN Hailo, SIN cámara,
@@ -63,9 +72,65 @@ jobs:
         working-directory: v1/edge
         run: ruff check .
 
-      - name: Pytest (sin hardware)
+      - name: Mypy (typing)
         working-directory: v1/edge
+        run: python -m mypy cam_counter_edge
+
+      - name: Pytest (sin hardware; integration_aws se SALTA sin OIDC)
+        working-directory: v1/edge
+        # SIN CAMCOUNTER_AWS_INTEGRATION ni credenciales: la suite integration_aws
+        # se salta limpiamente (skip con aviso vía -rs) y NUNCA rompe el build.
+        run: python -m pytest -q -rs
+
+  # Harness FastAPI local (v1/api): tests del contrato de la línea + fuente fake,
+  # SIN navegador (corren en cualquier runner). NO toca AWS.
+  api:
+    needs: changes
+    if: ${{ needs.changes.outputs.api == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar deps del harness API
+        run: python -m pip install fastapi "uvicorn[standard]" httpx websockets pytest
+      - name: Pytest (harness API, sin navegador)
+        working-directory: v1/api
         run: python -m pytest -q
+
+  # E2E de la UI local con Playwright (chromium headless) contra el harness FastAPI
+  # + FUENTE FAKE. SIN hardware, SIN AWS. (La SPA React/Vite/Tailwind completa llega
+  # en PR09; aquí la UI es el harness mínimo vanilla de v1/ui/public.)
+  ui-e2e:
+    needs: changes
+    if: ${{ needs.changes.outputs.ui == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Instalar deps del backend del harness (uvicorn lo arranca Playwright)
+        run: python -m pip install fastapi "uvicorn[standard]" websockets
+      - name: Instalar deps de la UI (Playwright)
+        working-directory: v1/ui
+        run: npm ci
+      - name: Typecheck (tsc) del E2E
+        working-directory: v1/ui
+        run: npx tsc --noEmit
+      - name: Instalar chromium de Playwright
+        working-directory: v1/ui
+        run: npx playwright install --with-deps chromium
+      - name: Playwright E2E (headless, fuente fake)
+        working-directory: v1/ui
+        run: npm run test:e2e
 
   # Validación estática de Terraform. SIN credenciales AWS. SIN apply ni plan.
   terraform:

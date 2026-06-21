@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cam-counter — UI local (PR10 harness)</title>
+    <style>
+      :root { font-family: system-ui, sans-serif; }
+      body { margin: 0; padding: 1rem; background: #0b1020; color: #e6eaf2; }
+      h1 { font-size: 1.1rem; }
+      .stage { position: relative; width: 640px; max-width: 100%; aspect-ratio: 16/9; background: #11182f; border: 1px solid #2a3a66; }
+      .stage img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+      .handle { fill: #4ade80; cursor: grab; }
+      .handle:active { cursor: grabbing; }
+      .row { display: flex; gap: 1rem; align-items: center; margin: 0.75rem 0; flex-wrap: wrap; }
+      button { background: #1d4ed8; color: white; border: 0; padding: 0.5rem 0.9rem; border-radius: 6px; cursor: pointer; }
+      .counters { font-variant-numeric: tabular-nums; }
+      .pill { background: #1f2a4d; padding: 0.25rem 0.6rem; border-radius: 999px; }
+      code { color: #93c5fd; }
+    </style>
+  </head>
+  <body>
+    <h1>cam-counter · línea de conteo (overlay SVG, coords normalizadas 0..1)</h1>
+
+    <div class="stage">
+      <img id="stream" alt="stream MJPEG" src="/api/stream" />
+      <svg id="overlay" viewBox="0 0 1 1" preserveAspectRatio="none">
+        <line id="line" x1="0.5" y1="0.1" x2="0.5" y2="0.9"
+              stroke="#4ade80" stroke-width="3" vector-effect="non-scaling-stroke" />
+        <circle id="handle-a" class="handle" data-testid="line-a" cx="0.5" cy="0.1" r="0.025" />
+        <circle id="handle-b" class="handle" data-testid="line-b" cx="0.5" cy="0.9" r="0.025" />
+      </svg>
+    </div>
+
+    <div class="row">
+      <button id="flip" data-testid="btn-flip">Invertir sentido</button>
+      <button id="save" data-testid="btn-save">Guardar línea</button>
+      <span class="pill">positive_side: <b id="positive-side" data-testid="positive-side">1</b></span>
+      <span class="pill">config_version: <b id="config-version" data-testid="config-version">1</b></span>
+      <span id="save-status" data-testid="save-status"></span>
+    </div>
+
+    <div class="row counters">
+      <span class="pill"><span id="label-in" data-testid="label-in">subieron</span>:
+        <b id="counter-in" data-testid="counter-in">0</b></span>
+      <span class="pill"><span id="label-out" data-testid="label-out">bajaron</span>:
+        <b id="counter-out" data-testid="counter-out">0</b></span>
+    </div>
+
+    <p>línea: <code id="line-coords" data-testid="line-coords"></code></p>
+
+    <script>
+      const svg = document.getElementById("overlay");
+      const lineEl = document.getElementById("line");
+      const handles = { a: document.getElementById("handle-a"), b: document.getElementById("handle-b") };
+      const state = {
+        a: { x: 0.5, y: 0.1 }, b: { x: 0.5, y: 0.9 },
+        positive_side: 1, positive_label: "subieron", negative_label: "bajaron",
+        config_version: 1,
+      };
+
+      function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+      function render() {
+        handles.a.setAttribute("cx", state.a.x); handles.a.setAttribute("cy", state.a.y);
+        handles.b.setAttribute("cx", state.b.x); handles.b.setAttribute("cy", state.b.y);
+        lineEl.setAttribute("x1", state.a.x); lineEl.setAttribute("y1", state.a.y);
+        lineEl.setAttribute("x2", state.b.x); lineEl.setAttribute("y2", state.b.y);
+        document.getElementById("positive-side").textContent = String(state.positive_side);
+        document.getElementById("config-version").textContent = String(state.config_version);
+        document.getElementById("label-in").textContent = state.positive_label;
+        document.getElementById("label-out").textContent = state.negative_label;
+        document.getElementById("line-coords").textContent =
+          `a=(${state.a.x.toFixed(3)},${state.a.y.toFixed(3)}) ` +
+          `b=(${state.b.x.toFixed(3)},${state.b.y.toFixed(3)}) side=${state.positive_side}`;
+      }
+
+      function svgPoint(evt) {
+        const pt = svg.createSVGPoint();
+        pt.x = evt.clientX; pt.y = evt.clientY;
+        const inv = svg.getScreenCTM().inverse();
+        const p = pt.matrixTransform(inv);
+        return { x: clamp01(p.x), y: clamp01(p.y) };
+      }
+
+      let dragging = null;
+      for (const key of ["a", "b"]) {
+        handles[key].addEventListener("pointerdown", (e) => {
+          dragging = key; handles[key].setPointerCapture(e.pointerId); e.preventDefault();
+        });
+      }
+      svg.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        state[dragging] = svgPoint(e); render();
+      });
+      svg.addEventListener("pointerup", () => { dragging = null; });
+
+      document.getElementById("flip").addEventListener("click", () => {
+        state.positive_side = state.positive_side === 1 ? -1 : 1;
+        const t = state.positive_label; state.positive_label = state.negative_label; state.negative_label = t;
+        render();
+      });
+
+      document.getElementById("save").addEventListener("click", async () => {
+        const body = {
+          site_id: "sitio-demo", device_id: "rpi-001", camera_id: "rpi-001-cam0",
+          config_version: state.config_version,
+          line: { a: { ...state.a }, b: { ...state.b } },
+          positive_side: state.positive_side,
+          positive_label: state.positive_label, negative_label: state.negative_label,
+          schema_version: 1,
+        };
+        const res = await fetch("/api/line", {
+          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        const saved = await res.json();
+        state.config_version = saved.config_version;
+        document.getElementById("save-status").textContent = `guardado v${saved.config_version}`;
+        render();
+      });
+
+      async function loadConfig() {
+        const cfg = await (await fetch("/api/line")).json();
+        state.a = cfg.line.a; state.b = cfg.line.b;
+        state.positive_side = cfg.positive_side;
+        state.positive_label = cfg.positive_label || "subieron";
+        state.negative_label = cfg.negative_label || "bajaron";
+        state.config_version = cfg.config_version;
+        render();
+      }
+
+      function connectWs() {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        const ws = new WebSocket(`${proto}://${location.host}/api/ws`);
+        ws.addEventListener("message", (ev) => {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === "counters") {
+            document.getElementById("counter-in").textContent = String(msg.counters.in);
+            document.getElementById("counter-out").textContent = String(msg.counters.out);
+          }
+        });
+      }
+
+      render();
+      loadConfig();
+      connectWs();
+    </script>
+  </body>
+</html>
