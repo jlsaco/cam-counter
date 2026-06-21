@@ -12,14 +12,26 @@ license = { text = "Proprietary" }
 authors = [{ name = "jlsaco" }]
 # Dependencias mínimas para x86 SIN Hailo. NO se declara `hailo_platform`:
 # no existe en PyPI (es un binario del Pi) y se importa de forma perezosa.
+# `pillow` provee el encoder JPEG del buffer de clips y el fallback GIF del
+# grabador (encoder PORTÁTIL garantizado en CI x86 y en el Pi); el MP4 preferido
+# usa cv2 (en el Pi) o el extra opcional `mp4` (imageio-ffmpeg) y, si falta,
+# degrada limpio a GIF. Ver `cam_counter_edge/clip.py`.
 dependencies = [
   "numpy>=1.24",
+  "pillow>=9",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=7",
   "ruff>=0.4",
+]
+# Encoder MP4 opcional (preferido sobre el fallback GIF) para plataformas sin un
+# cv2 utilizable. `imageio-ffmpeg` trae un ffmpeg embebido. Si no está instalado,
+# el grabador cae limpio a GIF (pillow).
+mp4 = [
+  "imageio>=2.28",
+  "imageio-ffmpeg>=0.4",
 ]
 
 [tool.setuptools]
