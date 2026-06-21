@@ -24,6 +24,8 @@ from .identifiers import (
     validate_site_id,
     validate_slug,
 )
+from .line_counter import LineCounter, compute_event_id, ms_to_iso_utc, signed_side
+from .store import SCHEMA_USER_VERSION, Store
 from .types import (
     BBOX_ORDER,
     PERSON_CLASS_ID,
@@ -42,6 +44,7 @@ __all__ = [
     "MAX_SLUG_LEN",
     "PERSON_CLASS_ID",
     "PERSON_ID",
+    "SCHEMA_USER_VERSION",
     "SLUG_PATTERN",
     "CrossingEvent",
     "Detection",
@@ -50,12 +53,17 @@ __all__ = [
     "InvalidSlugError",
     "Line",
     "LineConfig",
+    "LineCounter",
     "Point",
+    "Store",
     "Track",
+    "compute_event_id",
     "default_crossing_script",
     "is_valid_slug",
     "make_camera_id",
+    "ms_to_iso_utc",
     "parse_nms_class",
+    "signed_side",
     "validate_camera_id",
     "validate_device_id",
     "validate_site_id",
