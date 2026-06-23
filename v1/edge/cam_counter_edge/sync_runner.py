@@ -1,0 +1,146 @@
+"""Entrypoint del worker de sincronización edge -> cloud (``cam-counter-sync``).
+
+Cierra el lazo que faltaba: ``CloudSync`` (en ``sync.py``) sabe drenar los
+``CrossingEvent`` locales ``synced=0`` hacia AWS (DynamoDB + S3), pero NADIE lo
+arrancaba — por eso los eventos se contaban y persistían en SQLite pero nunca
+llegaban a la nube. Este runner lo ejecuta en bucle, desacoplado del conteo:
+
+- Lee el MISMO SQLite del borde (WAL: el edge escribe, este worker lee/marca).
+- Cada ``CAMCOUNTER_SYNC_INTERVAL_S`` llama a ``CloudSync.sync_once`` (idempotente
+  y offline-tolerante: si AWS no responde, los eventos quedan ``synced=0`` y se
+  reintentan; los duplicados no son error).
+- Hace un ``heartbeat`` best-effort al registro de dispositivos (DynamoDB).
+
+Corre en el VENV (tiene ``boto3`` + ``cam_counter_edge``); NO necesita cv2/Hailo,
+así que un fallo de red aquí jamás afecta al pipeline de detección del edge.
+
+Config por entorno (sin secretos en el repo):
+  CAMCOUNTER_SYNC_ENABLED      '1' para arrancar (si no, sale sin hacer nada).
+  CAMCOUNTER_DB_PATH           SQLite del borde (igual que edge/api).
+  CAMCOUNTER_DEVICE_ID         device del Pi (heartbeat).
+  CAMCOUNTER_AWS_REGION        región AWS (def us-east-1).
+  CAMCOUNTER_EDGE_ROLE_ARN     rol STS per-Pi a asumir (opcional; vacío = creds por defecto).
+  CAMCOUNTER_SYNC_INTERVAL_S   periodo del drenaje (def 10s).
+  CAMCOUNTER_MEDIA_BUCKET / _EVENTS_TABLE / _DEVICES_TABLE  overrides opcionales.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import signal
+import threading
+import time
+from typing import Any
+
+from .store import Store
+from .sync import (
+    DEFAULT_DEVICES_TABLE,
+    DEFAULT_EVENTS_TABLE,
+    DEFAULT_MEDIA_BUCKET,
+    DEFAULT_REGION,
+    CloudSync,
+    default_client_factory,
+)
+
+__all__ = ["main"]
+
+_log = logging.getLogger(__name__)
+
+
+def _env(name: str, default: str) -> str:
+    return os.environ.get(name, default)
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _app_version() -> str:
+    """Versión reportada en el heartbeat (best-effort; no crítica)."""
+    return os.environ.get("CAMCOUNTER_APP_VERSION", "edge-dev")
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Bucle del worker de sync. Devuelve 0 al recibir señal de parada."""
+    logging.basicConfig(level=logging.INFO)
+
+    if not _env_flag("CAMCOUNTER_SYNC_ENABLED"):
+        _log.info("cam-counter-sync: CAMCOUNTER_SYNC_ENABLED no está activo; nada que hacer.")
+        return 0
+
+    db_path = _env("CAMCOUNTER_DB_PATH", "cam-counter.db")
+    device_id = _env("CAMCOUNTER_DEVICE_ID", "demo-pi")
+    region = _env("CAMCOUNTER_AWS_REGION", DEFAULT_REGION)
+    role_arn = os.environ.get("CAMCOUNTER_EDGE_ROLE_ARN") or None
+    media_bucket = _env("CAMCOUNTER_MEDIA_BUCKET", DEFAULT_MEDIA_BUCKET)
+    events_table = _env("CAMCOUNTER_EVENTS_TABLE", DEFAULT_EVENTS_TABLE)
+    devices_table = _env("CAMCOUNTER_DEVICES_TABLE", DEFAULT_DEVICES_TABLE)
+    try:
+        interval_s = max(2.0, float(_env("CAMCOUNTER_SYNC_INTERVAL_S", "10")))
+    except ValueError:
+        interval_s = 10.0
+
+    store = Store(db_path)
+
+    def factory() -> Any:
+        return default_client_factory(region=region, role_arn=role_arn)
+
+    sync = CloudSync(
+        store,
+        device_id=device_id,
+        client_factory=factory,
+        media_bucket=media_bucket,
+        events_table=events_table,
+        devices_table=devices_table,
+    )
+
+    stop = threading.Event()
+
+    def _handle(_signum: int, _frame: Any) -> None:
+        _log.info("cam-counter-sync: señal recibida; parando…")
+        stop.set()
+
+    signal.signal(signal.SIGTERM, _handle)
+    signal.signal(signal.SIGINT, _handle)
+
+    _log.info(
+        "cam-counter-sync: device=%s region=%s tabla=%s intervalo=%ss (rol=%s)",
+        device_id,
+        region,
+        events_table,
+        interval_s,
+        role_arn or "creds-por-defecto",
+    )
+
+    last_heartbeat = 0.0
+    while not stop.is_set():
+        try:
+            result = sync.sync_once(limit=200)
+            if result.processed:
+                _log.info(
+                    "cam-counter-sync: procesados=%d sincronizados=%d offline=%s",
+                    result.processed,
+                    result.synced,
+                    result.stopped_offline,
+                )
+        except Exception as exc:  # noqa: BLE001 — el worker NUNCA debe morir por un fallo de sync
+            _log.warning("cam-counter-sync: error en sync_once (%r); reintento luego", exc)
+
+        # Heartbeat best-effort cada ~60s (no bloquea ni mata el worker si falla).
+        now = time.monotonic()
+        if now - last_heartbeat > 60.0:
+            try:
+                sync.heartbeat(reported_version=_app_version(), status="online")
+                last_heartbeat = now
+            except Exception as exc:  # noqa: BLE001
+                _log.debug("cam-counter-sync: heartbeat falló (%r)", exc)
+
+        stop.wait(interval_s)
+
+    store.close()
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

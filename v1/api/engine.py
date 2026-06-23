@@ -31,6 +31,7 @@ from cam_counter_edge.types import Point as EdgePoint
 
 import mjpeg
 from fakes import CameraState, FakeSource, NullSource, Source, default_line_config
+from rtsp_source import RtspSource, any_rtsp_configured
 from hub import WsHub
 from schemas import (
     Camera,
@@ -98,6 +99,10 @@ class Engine:
         self._store = await self._run(Store, self._settings.db_path)
         if self._settings.fake_source:
             self._source = FakeSource(self._settings, self._states, self._hub)
+        elif any_rtsp_configured(self._settings):
+            # Pi real: vídeo en vivo de la cámara por RTSP (ffmpeg). El conteo lo
+            # hace cam-counter-edge; esta fuente sólo alimenta el MJPEG de la UI.
+            self._source = RtspSource(self._settings, self._states)
         else:
             self._source = NullSource(self._states)
         self._source.start()
