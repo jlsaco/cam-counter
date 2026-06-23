@@ -19,6 +19,58 @@ http://<IP-de-la-Pi>:8080/
 
 Verás el vídeo con cajas verdes sobre las personas y un overlay `Personas: N   FPS   lat ms`.
 
+## 🚀 Arranque rápido (Makefile + `.env`)
+
+El stack nuevo (servicio de **conteo** + **API/UI**) se arranca con un `Makefile`
+que carga un `.env` local. **El `.env` contiene el secreto de la cámara (RTSP) y
+NO se versiona** (está en `.gitignore`); usa `.env.example` como plantilla.
+
+```bash
+# 1) Crea tu .env desde la plantilla y pon el password real de la cámara
+cp .env.example .env
+#    edita CAMCOUNTER_RTSP_URL -> rtsp://admin:<PASSWORD>@<IP>:554/Streaming/Channels/101
+
+# 2) (primera vez) instala deps de la API/edge y construye la UI
+make install
+
+# 3) Arranca todo: baja el legacy hailo-personas (libera el Hailo),
+#    arranca el edge (captura RTSP real + Hailo + conteo) y la API/UI.
+make up          # pide sudo para parar el servicio legacy
+
+# 4) Ver salud y URLs
+make status
+```
+
+Luego abre la UI en **`http://<IP-de-la-Pi>:8088/`**
+(salud del conteo en `http://<IP-de-la-Pi>:8081/healthz`).
+
+### Comandos `make`
+
+| Comando | Qué hace |
+|---|---|
+| `make up` | Baja el legacy + arranca **edge** (conteo real) + **api/UI**. _(pide sudo)_ |
+| `make down` | Para `edge` + `api` (no rearranca el legacy). |
+| `make restart` | `down` + `up`. |
+| `make status` | Estado de procesos + salud (`/healthz`, API, UI) + URL. |
+| `make logs` | Sigue los logs de `edge` + `api` (Ctrl-C para salir). |
+| `make edge` | Arranca **solo** el edge en primer plano (debug). |
+| `make api` | Arranca **solo** la api/UI en primer plano (debug). |
+| `make rtsp` | Reactiva el RTSP de la cámara (si se apagó). |
+| `make legacy-stop` / `make legacy-start` | Para / rearranca el detector legacy `hailo-personas`. _(sudo)_ |
+| `make install` | Instala deps (venv: edge+api) y construye la UI. |
+| `make build-ui` | Reconstruye solo la SPA (`v1/ui/dist`). |
+| `make clean` | Borra `.run/` (pids/logs). |
+
+> **Notas de operación**
+> - El **Hailo es de un solo proceso**: `make up` baja `hailo-personas` para liberarlo
+>   (si no, el edge falla con `HAILO_OUT_OF_PHYSICAL_DEVICES`). Rollback: `make legacy-start`.
+> - La **API/UI escucha en `:8088`** (`:8000` lo usa otro servicio; `:8080` es del legacy).
+> - El **vídeo en vivo de la API es un placeholder**: el vídeo+detección lo hace el `edge`;
+>   la API/UI muestra **contadores/eventos/salud reales** leídos del SQLite compartido.
+> - `make up` lanza con `nohup` (no `systemd`): tras un reboot no se levanta solo. Para
+>   persistencia usa los instaladores `scripts/install_edge_service.sh` / `install_api_service.sh`.
+
+
 ## 🧩 Estado actual (funcionando)
 
 | Componente | Detalle |
