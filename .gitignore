@@ -67,3 +67,9 @@ dist/
 
 # ───── Misc ─────
 *.tmp
+
+# Configuracion local con secretos (RTSP). Nunca versionar.
+/.env
+
+# Pids/logs de los procesos lanzados por el Makefile (make up).
+/.run/
