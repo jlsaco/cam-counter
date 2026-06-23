@@ -41,6 +41,8 @@ from .sync import (
     DEFAULT_REGION,
     CloudSync,
     default_client_factory,
+    is_conditional_check_failed,
+    is_precondition_failed,
 )
 
 __all__ = ["main"]
@@ -59,6 +61,53 @@ def _env_flag(name: str) -> bool:
 def _app_version() -> str:
     """Versión reportada en el heartbeat (best-effort; no crítica)."""
     return os.environ.get("CAMCOUNTER_APP_VERSION", "edge-dev")
+
+
+def _drain_once(
+    store: Any,
+    sync: CloudSync,
+    *,
+    clips_enabled: bool,
+    grace_ms: int,
+    now_ms: int,
+    limit: int = 200,
+) -> tuple[int, int, int, bool]:
+    """Drena eventos synced=0, ESPERANDO a que el clip de cada evento este listo.
+
+    Si los clips estan activos y un evento aun no tiene fila en ``clip_uploads`` y
+    es mas joven que ``grace_ms``, se SALTA esta ronda (se reintenta luego, cuando
+    el clip ya este encolado) para que ``sync_event`` suba el clip y enlace
+    ``clip_key`` en DynamoDB en la MISMA pasada. Pasado el ``grace``, sincroniza
+    igual (sin media) para no bloquear el backlog. Idempotente y offline-tolerante.
+
+    Devuelve ``(procesados, sincronizados, esperando_clip, parado_offline)``.
+    """
+    events = store.get_unsynced_events(limit)
+    processed = synced = waiting = 0
+    stopped = False
+    for event in events:
+        if clips_enabled:
+            clip = store.get_clip_upload_for_event(event.event_id)
+            age_ms = now_ms - int(event.ts_event_ms)
+            if clip is None and age_ms < grace_ms:
+                waiting += 1
+                continue  # el clip aun no esta listo: esperar (se reintenta luego)
+        processed += 1
+        try:
+            outcome = sync.sync_event(event)
+        except Exception as exc:  # noqa: BLE001
+            if is_conditional_check_failed(exc) or is_precondition_failed(exc):
+                continue  # duplicado idempotente: no deberia llegar aqui, pero ignora
+            _log.warning(
+                "cam-counter-sync: fallo transitorio en %s (%r); se reintentara",
+                event.event_id,
+                exc,
+            )
+            stopped = True
+            break
+        if outcome.marked_synced:
+            synced += 1
+    return processed, synced, waiting, stopped
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -80,6 +129,13 @@ def main(argv: list[str] | None = None) -> int:
         interval_s = max(2.0, float(_env("CAMCOUNTER_SYNC_INTERVAL_S", "10")))
     except ValueError:
         interval_s = 10.0
+    clips_enabled = _env("CAMCOUNTER_CLIPS_ENABLED", "1").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    try:
+        grace_ms = int(float(_env("CAMCOUNTER_CLIP_GRACE_S", "15")) * 1000)
+    except ValueError:
+        grace_ms = 15000
 
     store = Store(db_path)
 
@@ -116,16 +172,20 @@ def main(argv: list[str] | None = None) -> int:
     last_heartbeat = 0.0
     while not stop.is_set():
         try:
-            result = sync.sync_once(limit=200)
-            if result.processed:
+            now_ms = int(time.time() * 1000)
+            processed, done, waiting, stopped = _drain_once(
+                store, sync, clips_enabled=clips_enabled, grace_ms=grace_ms, now_ms=now_ms
+            )
+            if processed or waiting:
                 _log.info(
-                    "cam-counter-sync: procesados=%d sincronizados=%d offline=%s",
-                    result.processed,
-                    result.synced,
-                    result.stopped_offline,
+                    "cam-counter-sync: procesados=%d sincronizados=%d esperando_clip=%d offline=%s",
+                    processed,
+                    done,
+                    waiting,
+                    stopped,
                 )
         except Exception as exc:  # noqa: BLE001 — el worker NUNCA debe morir por un fallo de sync
-            _log.warning("cam-counter-sync: error en sync_once (%r); reintento luego", exc)
+            _log.warning("cam-counter-sync: error en el drenaje (%r); reintento luego", exc)
 
         # Heartbeat best-effort cada ~60s (no bloquea ni mata el worker si falla).
         now = time.monotonic()
