@@ -31,8 +31,8 @@ from cam_counter_edge.types import Point as EdgePoint
 
 import mjpeg
 from fakes import CameraState, FakeSource, NullSource, Source, default_line_config
-from rtsp_source import RtspSource, any_rtsp_configured
 from hub import WsHub
+from rtsp_source import RtspSource, any_rtsp_configured
 from schemas import (
     Camera,
     CameraHealth,

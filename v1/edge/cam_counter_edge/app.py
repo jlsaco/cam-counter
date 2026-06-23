@@ -597,8 +597,8 @@ def main(argv: list[str] | None = None) -> int:
 
         shared_detector = Detector()  # VDevice compartido por todas las cámaras
 
-    from .dummy import DummyDetector, smooth_crossing_script  # noqa: PLC0415
     from .config import ConfigWatcher  # noqa: PLC0415  (hot-reload de la linea)
+    from .dummy import DummyDetector, smooth_crossing_script  # noqa: PLC0415
     from .line_counter import LineCounter  # noqa: PLC0415
     from .tracker import CentroidIoUTracker  # noqa: PLC0415
 
