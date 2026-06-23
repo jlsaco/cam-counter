@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
+from typing import Protocol
 
 from cam_counter_edge import (
     ConfigWatcher,
@@ -254,8 +255,12 @@ class FakeSource:
         )
 
 
-# Tipo del contrato: cualquier objeto con start()/stop().
-Source = NullSource | FakeSource
+# Tipo del contrato (estructural): cualquier fuente con start()/stop().
+# Es un Protocol -y no una union de NullSource|FakeSource|RtspSource- para
+# evitar la dependencia circular (rtsp_source importa de fakes).
+class Source(Protocol):
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
 
 
 def _counter_totals(store: Store, camera_id: str) -> tuple[int, int]:
