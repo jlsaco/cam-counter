@@ -367,6 +367,7 @@ class CameraPipeline:
         health: HealthRegistry,
         stop_event: threading.Event,
         on_event: Callable[[CrossingEvent], None] | None = None,
+        on_frame: Callable[[Any, int], None] | None = None,
         watcher_poll: Callable[[], bool] | None = None,
         get_timeout: float = 1.0,
     ) -> None:
@@ -380,6 +381,7 @@ class CameraPipeline:
         self._health = health
         self._stop = stop_event
         self._on_event = on_event
+        self._on_frame = on_frame
         self._watcher_poll = watcher_poll
         self._get_timeout = get_timeout
 
@@ -455,6 +457,10 @@ class CameraPipeline:
             self._health.mark_busy(self.camera_id, False)
         latency_ms = (time.perf_counter() - t0) * 1000.0
         ts_ms = _now_ms()
+        if self._on_frame is not None:
+            # Alimenta el buffer de clips (pre-roll) con CADA frame, antes de que
+            # un cruce de este mismo frame pida el clip (asi el pre-roll lo incluye).
+            self._on_frame(frame, ts_ms)
         tracks = self._tracker.update(detections, ts=float(ts_ms))
         events = self._counter.process(tracks, ts_event_ms=ts_ms)
         for event in events:
@@ -591,11 +597,17 @@ def main(argv: list[str] | None = None) -> int:
 
         shared_detector = Detector()  # VDevice compartido por todas las cámaras
 
+    from .config import ConfigWatcher  # noqa: PLC0415  (hot-reload de la linea)
     from .dummy import DummyDetector, smooth_crossing_script  # noqa: PLC0415
     from .line_counter import LineCounter  # noqa: PLC0415
     from .tracker import CentroidIoUTracker  # noqa: PLC0415
 
     stop_event = threading.Event()
+
+    # Grabador de clips COMPARTIDO (un hilo worker, conexion SQLite propia). Captura
+    # un clip MP4/GIF (pre+post-roll) por cruce y encola su subida a S3 (sync).
+    clip_recorder = None if fake else _build_clip_recorder(db_path)
+    clip_encode = _make_clip_frame_encoder() if clip_recorder is not None else None
 
     def build_pipeline(camera_id: str) -> CameraPipeline:
         store = Store(db_path)
@@ -615,6 +627,9 @@ def main(argv: list[str] | None = None) -> int:
                 negative_label="bajaron",
             )
         counter = LineCounter.from_config(store, config, min_frames=2)
+        # Hot-reload de la linea-umbral: relee config_version barato POR FRAME y, si
+        # cambio (la UI guardo una nueva linea), reconfigura el LineCounter EN CALIENTE.
+        watcher = ConfigWatcher(store, counter, camera_id, initial_version=config.config_version)
         tracker = CentroidIoUTracker(max_age=15)
         if fake:
             detector: Any = DummyDetector(smooth_crossing_script(), loop=True)
@@ -622,6 +637,18 @@ def main(argv: list[str] | None = None) -> int:
         else:
             detector = shared_detector
             frame_source = _rtsp_source(camera_id, stop_event)
+        on_event = None
+        on_frame = None
+        if clip_recorder is not None and clip_encode is not None:
+            def on_event(ev: CrossingEvent, _r: Any = clip_recorder) -> None:
+                _r.request_clip(ev)
+
+            def on_frame(fr: Any, ts: int, _r: Any = clip_recorder,
+                         _cam: str = camera_id, _enc: Any = clip_encode) -> None:
+                jpeg = _enc(fr)
+                if jpeg is not None:
+                    _r.add_frame(_cam, jpeg, ts)
+
         return CameraPipeline(
             camera_id,
             frame_source=frame_source,
@@ -632,6 +659,9 @@ def main(argv: list[str] | None = None) -> int:
             store=store,
             health=health,
             stop_event=stop_event,
+            on_event=on_event,
+            on_frame=on_frame,
+            watcher_poll=watcher.poll,
         )
 
     supervisor = Supervisor(
@@ -672,6 +702,9 @@ def main(argv: list[str] | None = None) -> int:
         supervisor.run()
     finally:
         supervisor.stop()
+        if clip_recorder is not None:
+            with contextlib.suppress(Exception):
+                clip_recorder.close(timeout=5.0)
         health_server.stop()
     return 0
 
@@ -698,6 +731,65 @@ class _SyntheticFrameSource:
 
     def close(self) -> None:
         return None
+
+
+def _build_clip_recorder(db_path: str) -> Any:
+    """Crea el ``ClipRecorder`` compartido (o ``None`` si los clips estan off).
+
+    Gated por ``CAMCOUNTER_CLIPS_ENABLED`` (ON por defecto). Usa una conexion
+    ``Store`` PROPIA (el worker del recorder escribe ``clip_uploads`` desde su
+    hilo). Los clips se escriben en ``CAMCOUNTER_CLIP_DIR`` (def ``<db>/clips``).
+    """
+    if os.environ.get("CAMCOUNTER_CLIPS_ENABLED", "1").strip().lower() not in {
+        "1", "true", "yes", "on"
+    }:
+        return None
+    from pathlib import Path  # noqa: PLC0415
+
+    from .clip import ClipRecorder  # noqa: PLC0415  (perezoso: numpy/PIL/cv2)
+    from .store import Store  # noqa: PLC0415
+
+    out_dir = os.environ.get("CAMCOUNTER_CLIP_DIR") or str(
+        Path(db_path).resolve().parent / "clips"
+    )
+    try:
+        fps = float(os.environ.get("CAMCOUNTER_CLIP_FPS", "15"))
+        pre = float(os.environ.get("CAMCOUNTER_CLIP_PRE_S", "2"))
+        post = float(os.environ.get("CAMCOUNTER_CLIP_POST_S", "2"))
+    except ValueError:
+        fps, pre, post = 15.0, 2.0, 2.0
+    clip_store = Store(db_path)
+    _log.info(
+        "cam-counter-edge: clips ON -> %s (fps=%s pre=%ss post=%ss)", out_dir, fps, pre, post
+    )
+    return ClipRecorder(clip_store, out_dir=out_dir, fps=fps, pre_seconds=pre, post_seconds=post)
+
+
+def _make_clip_frame_encoder() -> Any:
+    """Devuelve un encoder ``frame(BGR) -> bytes JPEG`` (cv2, reescalado).
+
+    Reescala a ``CAMCOUNTER_CLIP_WIDTH``x``CAMCOUNTER_CLIP_HEIGHT`` (def 640x360)
+    para clips ligeros y poco coste de CPU en el camino de conteo.
+    """
+    import cv2  # noqa: PLC0415  (perezoso; solo en el Pi)
+
+    try:
+        w = int(os.environ.get("CAMCOUNTER_CLIP_WIDTH", "640"))
+        h = int(os.environ.get("CAMCOUNTER_CLIP_HEIGHT", "360"))
+        q = int(os.environ.get("CAMCOUNTER_CLIP_QUALITY", "70"))
+    except ValueError:
+        w, h, q = 640, 360, 70
+    params = [cv2.IMWRITE_JPEG_QUALITY, q]
+
+    def encode(frame: Any) -> bytes | None:
+        try:
+            small = cv2.resize(frame, (w, h))
+            ok, buf = cv2.imencode(".jpg", small, params)
+            return buf.tobytes() if ok else None
+        except Exception:  # noqa: BLE001 — un frame ilegible no debe romper el conteo
+            return None
+
+    return encode
 
 
 def _rtsp_source(camera_id: str, stop_event: threading.Event) -> _FrameSource:

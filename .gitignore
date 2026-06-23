@@ -73,3 +73,6 @@ dist/
 
 # Pids/logs de los procesos lanzados por el Makefile (make up).
 /.run/
+
+# Clips de video generados en runtime (media local; se sube a S3).
+/v1/clips/
