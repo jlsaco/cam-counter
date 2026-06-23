@@ -598,6 +598,7 @@ def main(argv: list[str] | None = None) -> int:
         shared_detector = Detector()  # VDevice compartido por todas las cámaras
 
     from .dummy import DummyDetector, smooth_crossing_script  # noqa: PLC0415
+    from .config import ConfigWatcher  # noqa: PLC0415  (hot-reload de la linea)
     from .line_counter import LineCounter  # noqa: PLC0415
     from .tracker import CentroidIoUTracker  # noqa: PLC0415
 
@@ -626,6 +627,9 @@ def main(argv: list[str] | None = None) -> int:
                 negative_label="bajaron",
             )
         counter = LineCounter.from_config(store, config, min_frames=2)
+        # Hot-reload de la linea-umbral: relee config_version barato POR FRAME y, si
+        # cambio (la UI guardo una nueva linea), reconfigura el LineCounter EN CALIENTE.
+        watcher = ConfigWatcher(store, counter, camera_id, initial_version=config.config_version)
         tracker = CentroidIoUTracker(max_age=15)
         if fake:
             detector: Any = DummyDetector(smooth_crossing_script(), loop=True)
@@ -657,6 +661,7 @@ def main(argv: list[str] | None = None) -> int:
             stop_event=stop_event,
             on_event=on_event,
             on_frame=on_frame,
+            watcher_poll=watcher.poll,
         )
 
     supervisor = Supervisor(
