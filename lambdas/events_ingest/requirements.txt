@@ -1,0 +1,4 @@
+# Única dependencia externa de la ingesta: jsonschema (validación VERBATIM del contrato).
+# boto3/botocore ya vienen en el runtime de Lambda python3.12 (no se empaquetan).
+# Pineado para builds reproducibles; arm64 (Graviton) usa wheels manylinux aarch64.
+jsonschema==4.23.0
