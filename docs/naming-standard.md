@@ -95,6 +95,15 @@ thing↔rol per-Pi).
 | **Telemetría** | `cam-counter/{device_id}/telemetry` | device → cloud | Métricas (fps, temp, cola de sync). Best-effort. |
 | **Comandos** | `cam-counter/{device_id}/cmd` | cloud → device | Comandos al Pi (p. ej. recargar config, capturar snapshot). |
 
+**Cuatro patrones de topic competían en los borradores** (todos rechazados salvo el canon):
+
+| # | Patrón (rechazado / canon) | Origen | Veredicto |
+|---|---|---|---|
+| P1 | `cam-counter/{device_id}/events/crossing` (+ `status` / `telemetry` / `cmd`) | spec topología IoT | **CANON** ✅ |
+| P2 | `cam-counter/{thing_name}/events` (+ `telemetry` / `status` / `cmd` / `cmd-ack`) | borrador naming-standard | ❌ usa thing name (largo, duplica `site_id`) y subtipos divergentes |
+| P3 | `cam-counter/evt/{site}/{thing}/crossing`, `cam-counter/cmd/...` (verbo primero) | spec device-docker-mqtt | ❌ antepone verbo (`evt`/`cmd`) al identity; rompe el aislamiento por `{device_id}` |
+| P4 | `cam-counter/{site}__{device}/...` (separador `__`) | spec provisioning-certs | ❌ usa `__` (ver §10 #1) |
+
 Las **shadows** usan los topics reservados `$aws/things/{thingName}/shadow/name/{shadow}/...`
 (gestionados por AWS); no se renombran (ver §4).
 
@@ -195,13 +204,13 @@ porque el nombre de regla de IoT **no admite `-`** (solo `[a-zA-Z0-9_]`).
 ## 9. Variables de entorno — prefijo canónico `CAMCOUNTER_*`
 
 **`CAMCOUNTER_*` es el prefijo canónico y ÚNICO.** Es el que leen `v1/api/settings.py`,
-`v1/edge/cam_counter_edge/*` y `.env.example`. **`CC_*` queda PROHIBIDO** (no existe en el
-repo; introducirlo rompería `config.py`/`settings.py`). Cualquier `.env` de Docker mapea
-**1:1** a estas claves (mismo nombre, sin traducción).
+`v1/edge/cam_counter_edge/*` y el que declara `.env.example`. **`CC_*` queda PROHIBIDO** (no
+existe en el repo; introducirlo rompería `config.py`/`settings.py`). Cualquier `.env` de Docker
+mapea **1:1** a estas claves (mismo nombre, sin traducción).
 
-### 9.1 Variables existentes (leídas por el código — NO renombrar)
+### 9.1 Variables existentes (leídas por el código y/o declaradas en `.env.example` — NO renombrar)
 
-| Variable | Uso | Default en código |
+| Variable | Uso | Default (código / `.env.example`) |
 |---|---|---|
 | `CAMCOUNTER_RTSP_URL` | URL RTSP de la cámara (**secreto** → `.env`, nunca en git) | — |
 | `CAMCOUNTER_SITE_ID` | slug de sitio | `demo-site` |
@@ -246,7 +255,7 @@ las que aparecían en borradores/specs y **quedan prohibidas**.
 
 | # | Tema | Variantes rechazadas | **Canon** | Justificación |
 |---|---|---|---|---|
-| 1 | **Separador de nombres** | `cam__counter`, `camCounter`, `cam_counter-*` | **`cam-counter-…`** (kebab, guion simple) | Consistencia con el prefijo de producto ya usado en S3/DynamoDB/IAM existentes. `__` y camelCase no aparecen en ningún recurso real. |
+| 1 | **Separador de slugs en nombres compuestos** (`__` vs `-`) | `cam-counter-{site}__{device}` (doble guion bajo entre slugs, p. ej. `cam-counter-sitio-demo__rpi-001`); también `camCounter`/`cam_counter-*` | **`cam-counter-{site_id}-{device_id}`** (guion simple `-` entre slugs) | Un borrador de provisioning proponía `__` como separador "inequívoco" entre slugs; pero los recursos reales (S3/DynamoDB/IAM, p. ej. `cam-counter-edge-{site}-{device}`) ya unen slugs con `-` simple. El regex de slug (`[a-z0-9-]`) hace que `-` nunca sea ambiguo dentro de un nombre con prefijo fijo. Se unifica en `-`; `__` y camelCase quedan prohibidos. |
 | 2 | **Prefijo de entorno** | `CC_*` | **`CAMCOUNTER_*`** | Es el que LEE el código (`settings.py`, edge, `.env.example`). `CC_*` nunca existió; introducirlo rompería la config. |
 | 3 | **Thing Type** | `cam-counter-thing-type`, `camCounterDevice`, `cam-counter-pi` | **`cam-counter-edge-device`** | Describe el rol (dispositivo de borde) sin acoplarse al hardware concreto (Pi5/Hailo). |
 | 4a | **Topic — raíz** | `cam_counter/…`, `camcounter/…` | **`cam-counter/…`** | Misma raíz kebab que el resto del producto. |
