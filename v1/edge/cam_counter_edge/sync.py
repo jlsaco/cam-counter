@@ -9,7 +9,8 @@ la nube de forma IDEMPOTENTE y desacoplada del camino de conteo:
    ``s3_key_planned`` es estable porque ``event_id`` es DETERMINISTA). Si el objeto
    ya existe (``PreconditionFailed``), se considera subido (idempotente).
 2. **Conditional-put del evento** en la tabla ``cam-counter-events`` con
-   ``attribute_not_exists(PK)``. Un put rechazado por duplicado
+   ``attribute_not_exists(PK) AND attribute_not_exists(SK)`` (idéntica condición que
+   la Lambda de ingesta WP05, para idempotencia del dual-run). Un put rechazado por duplicado
    (``ConditionalCheckFailedException``) NO es error: el evento ya estaba en la
    nube, así que se marca ``synced=1`` igual (idempotencia del contrato A).
 3. **Heartbeat al registro** de dispositivos SÓLO con ``UpdateItem``
@@ -429,7 +430,14 @@ class CloudSync:
             self._aws().dynamodb.put_item(
                 TableName=self._events_table,
                 Item=item,
-                ConditionExpression="attribute_not_exists(PK)",
+                # MISMA condición EXACTA que la Lambda de ingesta (WP05): el dual-run
+                # (escritura directa + por MQTT->Lambda) debe usar el idéntico
+                # `attribute_not_exists(PK) AND attribute_not_exists(SK)` para que ambos
+                # caminos sean idempotentes sobre el MISMO item. La SK deriva del
+                # `event_id` determinista y de `ts_event_ms` (INMUTABLE por event_id: se
+                # persiste al contar y NO se recomputa al publicar), así que ambos caminos
+                # producen idéntica PK/SK y el segundo put se rechaza sin duplicar.
+                ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
             )
             return True
         except Exception as exc:  # noqa: BLE001

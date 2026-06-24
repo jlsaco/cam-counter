@@ -77,3 +77,10 @@ dist/
 
 # Clips de video generados en runtime (media local; se sube a S3).
 /v1/clips/
+
+# ───── Lambdas (WP05) ─────
+# Esquema horneado en build (copia byte-a-byte de contracts/; la fuente de verdad es
+# contracts/). Se genera con `make build-lambdas`; nunca se versiona la copia.
+/lambdas/*/schema/*.json
+# Zips deterministas que produce terraform (data.archive_file) por módulo.
+/terraform/modules/*/.build/
