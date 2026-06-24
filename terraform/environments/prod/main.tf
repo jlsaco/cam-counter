@@ -134,3 +134,40 @@ module "fleet_releases" {
     managed_by = "mad-runner"
   }
 }
+
+# ═══════════════════════════════════ WP04 — IoT Credentials Provider ═══════════════════════════════════
+#
+# Role alias `cam-counter-edge-s3-role-alias` + rol `cam-counter-edge-s3-role`: el device cambia
+# su MISMO cert mTLS por credenciales STS de corta vida para subir clips a S3, SIN llaves
+# estáticas. Apila sobre WP03; ESTRICTAMENTE ADITIVO (F1): sólo añade un rol IAM y un role alias;
+# no toca recursos de PR02–PR04 ni de PR11.
+#
+# El bucket de media NO lo gestiona este módulo: se REFERENCIA con un `data` source (criterio de
+# aceptación WP04). El `bucket` del data source es el output del módulo `media_bucket` ya aplicado,
+# lo que fuerza el orden (se lee tras existir) y garantiza que política y bucket coinciden.
+data "aws_s3_bucket" "media" {
+  bucket = module.media_bucket.bucket_name
+}
+
+# Crea un rol IAM (claves de tag CASE-INSENSITIVE) + un role alias IoT. Usa el proveedor
+# IAM-safe `aws.iam` (igual que iam_edge / iam_github_oidc / iam_lambda) para evitar «Duplicate
+# tag keys» en el rol. El prefijo S3 se acota con los MISMOS placeholders del primer Pi que usa
+# iam_edge (sitio-demo / rpi-001). Sus outputs (role_alias_arn) los consumirá `iot-core`.
+module "iot_credential_provider" {
+  source = "../../modules/iot-credential-provider"
+
+  providers = {
+    aws = aws.iam
+  }
+
+  site_id   = local.edge_site_id
+  device_id = local.edge_device_id
+
+  media_bucket_name = data.aws_s3_bucket.media.bucket
+  media_bucket_arn  = data.aws_s3_bucket.media.arn
+
+  tags = {
+    project    = "cam-counter"
+    managed_by = "mad-runner"
+  }
+}
