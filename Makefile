@@ -33,7 +33,11 @@ LEGACY   := hailo-personas
 EDGE_PY  := $(SYS_PY)
 
 .PHONY: help up down restart status logs edge api sync rtsp \
-        legacy-stop legacy-start install build-ui clean
+        legacy-stop legacy-start install build-ui clean validate-contracts
+
+# venv aislado del gate de contratos (no contamina el .venv del producto).
+CONTRACTS_VENV := $(REPO)/.venv-contracts
+CONTRACTS_PY   := $(CONTRACTS_VENV)/bin/python
 
 help:
 > @echo "cam-counter — targets:"
@@ -48,6 +52,7 @@ help:
 > @echo "  make rtsp         Reactivar el RTSP de la camara (si se apago)"
 > @echo "  make legacy-stop  Parar el servicio legacy hailo-personas        [sudo]"
 > @echo "  make legacy-start Rearrancar el servicio legacy hailo-personas   [sudo]"
+> @echo "  make validate-contracts  Gate de contratos: valida ejemplos vs contracts/ (falla cerrado)"
 > @echo "  make install      Instalar deps (venv: edge+api+boto3) y construir la UI"
 > @echo "  make build-ui     Reconstruir solo la SPA (v1/ui/dist)"
 > @echo "  make clean        Borrar .run/ (pids/logs)"
@@ -146,6 +151,16 @@ build-ui:
 
 clean:
 > rm -rf $(RUN_DIR)
+
+# --- Gate de contratos (WP02) -----------------------------------------------
+# Valida que el payload MQTT (= crossing_event verbatim) y el desired de la
+# shadow line-config (= line_config verbatim) se ajustan a contracts/. Aislado
+# en su propio venv: sólo jsonschema + pytest, NO el paquete del producto.
+validate-contracts:
+> @test -d $(CONTRACTS_VENV) || $(SYS_PY) -m venv $(CONTRACTS_VENV)
+> @$(CONTRACTS_PY) -m pip install --quiet --upgrade pip
+> @$(CONTRACTS_PY) -m pip install --quiet -r $(REPO)/tests/contracts/requirements.txt
+> $(CONTRACTS_PY) -m pytest $(REPO)/tests/contracts -q
 
 $(RUN_DIR):
 > @mkdir -p $(RUN_DIR)

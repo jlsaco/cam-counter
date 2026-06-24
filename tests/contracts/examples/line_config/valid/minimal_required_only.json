@@ -1,0 +1,12 @@
+{
+  "site_id": "tienda",
+  "device_id": "rpi5-pasillo",
+  "camera_id": "rpi5-pasillo-cam2",
+  "config_version": 0,
+  "line": {
+    "a": { "x": 0.0, "y": 0.25 },
+    "b": { "x": 1.0, "y": 0.75 }
+  },
+  "positive_side": -1,
+  "schema_version": 1
+}

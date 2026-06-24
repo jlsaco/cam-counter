@@ -1,0 +1,11 @@
+{
+  "event_id": "dced058e990a343d94fdf5296ad81ce51b6c4eb7",
+  "site_id": "casa",
+  "device_id": "rpi5-puerta",
+  "camera_id": "rpi5-puerta-cam1",
+  "crossing_seq": 42,
+  "direction": "in",
+  "ts_event_ms": 1718900000000,
+  "ts_event_iso": "2024-06-20T16:13:20.000Z",
+  "schema_version": 1
+}
