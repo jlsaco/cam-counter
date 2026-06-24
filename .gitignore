@@ -76,3 +76,14 @@ dist/
 
 # Clips de video generados en runtime (media local; se sube a S3).
 /v1/clips/
+
+# ───── Identidad IoT por-device (NUNCA en git) ─────
+# Salida de scripts/provision-device.sh: certs, llave privada, CSR, .env y bundle de
+# cada device. Contienen la LLAVE PRIVADA del Pi y rutas a secretos; jamás se versionan.
+/provisioning/
+# Defensa en profundidad por si OUT_DIR apuntara a otra ruta del repo:
+*.cert.pem
+*.private.key
+*.csr
+AmazonRootCA1.pem
+device-bundle.tar.gz
