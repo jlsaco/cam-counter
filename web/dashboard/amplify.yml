@@ -1,0 +1,23 @@
+# Amplify Hosting build spec — consola de flota cam-counter (WP12).
+# El despliegue real (dominio, callback OAuth válido, variables de entorno NEXT_PUBLIC_*)
+# se cablea en WP13. appRoot apunta a este subproyecto del monorepo.
+version: 1
+applications:
+  - appRoot: web/dashboard
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            # NEXT_PUBLIC_* se inyectan como variables de entorno de la app en Amplify Console.
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
+          - .next/cache/**/*
