@@ -1,0 +1,21 @@
+{
+  "event_id": "dced058e990a343d94fdf5296ad81ce51b6c4eb7",
+  "site_id": "casa",
+  "device_id": "rpi5-puerta",
+  "camera_id": "rpi5-puerta-cam1",
+  "track_id": "t-0007",
+  "crossing_seq": 42,
+  "direction": "in",
+  "positive_label": "subieron",
+  "negative_label": "bajaron",
+  "label": "subieron",
+  "line_version": 3,
+  "ts_event_ms": 1718900000000,
+  "ts_event_iso": "2024-06-20T16:13:20.000Z",
+  "confidence": 0.91,
+  "clip_key": "media/casa/rpi5-puerta/rpi5-puerta-cam1/2024/06/20/dced058e990a343d94fdf5296ad81ce51b6c4eb7.mp4",
+  "clip_status": "uploaded",
+  "schema_version": 1,
+  "synced": 0,
+  "created_at": "2024-06-20T16:13:20.120Z"
+}

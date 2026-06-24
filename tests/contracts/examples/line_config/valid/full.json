@@ -1,0 +1,15 @@
+{
+  "site_id": "casa",
+  "device_id": "rpi5-puerta",
+  "camera_id": "rpi5-puerta-cam1",
+  "config_version": 3,
+  "line": {
+    "a": { "x": 0.1, "y": 0.5 },
+    "b": { "x": 0.9, "y": 0.5 }
+  },
+  "positive_side": 1,
+  "positive_label": "subieron",
+  "negative_label": "bajaron",
+  "updated_at": "2024-06-20T16:10:00.000Z",
+  "schema_version": 1
+}
