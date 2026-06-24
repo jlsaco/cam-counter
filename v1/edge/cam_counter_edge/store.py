@@ -548,6 +548,98 @@ class Store:
             )
         return new_version
 
+    def list_config_cameras(self) -> list[str]:
+        """``camera_id`` DISTINTOS con config de línea en ``camera_config``.
+
+        Lo usa el reconciliador de Device Shadow (WP15) para resolver las N
+        cámaras del device (``line_config`` es POR-CÁMARA pero el shadow es
+        por-THING): cada cámara obtiene su named shadow ``line-config-{camera_id}``.
+        Es una LECTURA (no toma lock de escritura).
+        """
+        rows = self._conn.execute(
+            "SELECT camera_id FROM camera_config ORDER BY camera_id"
+        ).fetchall()
+        return [str(r["camera_id"]) for r in rows]
+
+    def apply_remote_line_config(
+        self, camera_id: str, config: LineConfig
+    ) -> int | None:
+        """Aplica una config de línea REMOTA (Device Shadow) con arbitraje MONÓTONO.
+
+        Árbitro: gana la versión MAYOR. Sólo escribe si ``config.config_version``
+        es ESTRICTAMENTE mayor que el ``config_version`` ACTUAL en la DB (0 si la
+        fila no existe); si es menor o igual, NO toca nada y devuelve ``None``
+        (el caller re-reporta su versión vigente para que la nube vea que ya está
+        por delante y el delta del shadow se limpie). Así NO hay split-brain: la
+        nube debe proponer una versión mayor para ganar.
+
+        A diferencia de ``set_line_config`` (CAS donde la DB gobierna la versión
+        haciendo ``actual + 1``), aquí la versión la fija el escritor remoto
+        VERBATIM (``config.config_version``), porque la nube es el árbitro y ya
+        garantizó la monotonía global; copiar la versión deseada hace que
+        ``reported == desired`` y el delta converja. El SQLite sigue siendo el
+        ÚNICO punto de aplicación (la UI local y el reconciliador escriben aquí,
+        ambos serializados por ``BEGIN IMMEDIATE``).
+
+        Returns:
+            El nuevo ``config_version`` aplicado (== ``config.config_version``),
+            o ``None`` si se ignoró por arbitraje (versión <= actual).
+        """
+        validate_camera_id(camera_id)
+        validate_site_id(config.site_id)
+        validate_device_id(config.device_id)
+        if config.positive_side not in (-1, 1):
+            raise ValueError(
+                f"positive_side debe ser -1 o +1, no {config.positive_side!r}"
+            )
+        incoming = int(config.config_version)
+        if incoming < 0:
+            raise ValueError(f"config_version debe ser >= 0, no {incoming!r}")
+        ax, ay = _point_xy(config.line.a)
+        bx, by = _point_xy(config.line.b)
+        now = config.updated_at or _now_iso()
+        with self._immediate() as cur:
+            row = cur.execute(
+                "SELECT config_version FROM camera_config WHERE camera_id = ?",
+                (camera_id,),
+            ).fetchone()
+            current = int(row["config_version"]) if row is not None else 0
+            if incoming <= current:
+                return None  # arbitraje monótono: la versión local ya gana; ignora
+            cur.execute(
+                "INSERT INTO camera_config ("
+                " camera_id, site_id, device_id, line_ax, line_ay, line_bx, line_by,"
+                " positive_side, positive_label, negative_label, config_version,"
+                " schema_version, updated_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(camera_id) DO UPDATE SET "
+                " site_id=excluded.site_id, device_id=excluded.device_id,"
+                " line_ax=excluded.line_ax, line_ay=excluded.line_ay,"
+                " line_bx=excluded.line_bx, line_by=excluded.line_by,"
+                " positive_side=excluded.positive_side,"
+                " positive_label=excluded.positive_label,"
+                " negative_label=excluded.negative_label,"
+                " config_version=excluded.config_version,"
+                " schema_version=excluded.schema_version,"
+                " updated_at=excluded.updated_at",
+                (
+                    camera_id,
+                    config.site_id,
+                    config.device_id,
+                    ax,
+                    ay,
+                    bx,
+                    by,
+                    int(config.positive_side),
+                    config.positive_label,
+                    config.negative_label,
+                    incoming,
+                    int(config.schema_version),
+                    now,
+                ),
+            )
+        return incoming
+
     # -- cola de subidas de clips a S3 (clip_uploads) ---------------------
 
     def enqueue_clip_upload(
