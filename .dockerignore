@@ -1,0 +1,56 @@
+# .dockerignore — contexto de build de las imagenes edge/api (contexto = raiz del
+# repo). Minimiza el contexto y, sobre todo, GARANTIZA que ningun secreto entre en
+# una imagen: .env y certs/llaves NUNCA se hornean (se montan en runtime).
+
+# --- Secretos: jamas en una imagen (defensa en profundidad sobre .gitignore) ---
+.env
+**/.env
+certs/
+provisioning/
+*.cert.pem
+*.private.key
+*.csr
+AmazonRootCA1.pem
+
+# --- VCS / CI / docs ---
+.git/
+.github/
+.claude/
+docs/
+*.md
+
+# --- Subsistemas que NO entran en las imagenes del device ---
+terraform/
+lambdas/
+ota/
+web/
+v1/rtsp-enable/
+v1/detection/
+
+# --- Node / build de la UI (la imagen api la reconstruye desde fuentes) ---
+**/node_modules/
+v1/ui/dist/
+**/dist/
+**/.vite/
+
+# --- Python: caches y entornos (regenerables) ---
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/*.egg-info/
+.venv/
+.venv-contracts/
+venv/
+
+# --- Runtime / datos locales (jamas en una imagen) ---
+*.db
+*.db-wal
+*.db-shm
+*.log
+.run/
+v1/clips/
+
+# NOTA: docker/debs/ (los .deb de HailoRT staged) NO se excluye a proposito: el
+# build de edge los necesita. Son gitignored pero deben estar en el contexto.

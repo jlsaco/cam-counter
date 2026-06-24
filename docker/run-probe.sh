@@ -42,7 +42,9 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
     echo ">> stage HailoRT debs del host (bits identicos => match con driver)"
     "$SCRIPT_DIR/stage-debs.sh"
     echo ">> build $IMAGE_TAG (ARM64 real)"
-    docker build -f "$SCRIPT_DIR/edge.Dockerfile" -t "$IMAGE_TAG" "$SCRIPT_DIR"
+    # Contexto = raiz del repo (WP17): la imagen edge necesita v1/edge ademas de
+    # los .deb staged. El Dockerfile referencia docker/... y v1/... desde la raiz.
+    docker build -f "$SCRIPT_DIR/edge.Dockerfile" -t "$IMAGE_TAG" "$SCRIPT_DIR/.."
 fi
 
 # --- run: minimo privilegio, solo el nodo Hailo, HEFs del host read-only -----
@@ -56,10 +58,13 @@ if [ "${1:-}" != "" ]; then
 fi
 
 echo ">> run probe (sin --privileged)"
+# El ENTRYPOINT de la imagen de PRODUCCION (WP17) es el supervisor de conteo; aqui
+# lo SOBREESCRIBIMOS para ejecutar el probe del spike (diagnostico del acceso Hailo).
 exec docker run --rm \
     --device "$DEV:$DEV" \
     --group-add "$DEV_GID" \
     -v "$HEF_DIR:/usr/share/hailo-models:ro" \
     "${MOUNT_IMG_ARG[@]}" \
     "${PROBE_IMAGE_ARG[@]}" \
-    "$IMAGE_TAG"
+    --entrypoint python3 \
+    "$IMAGE_TAG" /opt/cam-counter/hailo_probe.py

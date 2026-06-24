@@ -67,6 +67,16 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(api_router, prefix="/api")
+
+    # Liveness plano para el HEALTHCHECK del contenedor (compose/Docker). A
+    # diferencia de /api/health (salud de PRODUCTO: lee SQLite), /healthz es una
+    # sonda BARATA que sólo confirma que el proceso Uvicorn sirve: no toca la base
+    # (la api monta la DB :ro y debe reportarse viva aun en arranque). Fuera de
+    # /api a propósito, para alinearse con el /healthz del supervisor de borde.
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
     _mount_spa(app)
     return app
 

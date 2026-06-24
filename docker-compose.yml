@@ -1,0 +1,93 @@
+# docker-compose.yml — runtime de PRODUCCIÓN del dispositivo (WP17, dockerización).
+#
+# Dos servicios en la Raspberry Pi 5:
+#   - edge : detector (Hailo) + sync (mqtt_publisher/shadow) + clips. NECESITA el
+#            Hailo (passthrough /dev/hailo0, sin privileged) y el material mTLS
+#            (volumen certs :ro). Escribe el SQLite del borde.
+#   - api  : FastAPI + UI same-origin. NO necesita Hailo ni certs. Lee el MISMO
+#            SQLite read-only y publica la UI en 127.0.0.1:8088 (sólo LAN/loopback).
+#
+# El SQLite WAL se COMPARTE por el volumen `cam-counter-db` (edge rw, api ro).
+#
+# La imagen es GENÉRICA; lo POR-DEVICE es el `.env` (CAMCOUNTER_*) + el volumen de
+# certs. Ambos se MONTAN, nunca se hornean ni se commitean (ver .gitignore). Las
+# variables de interpolación de compose (tag de imagen, GID del Hailo, ruta de
+# certs) salen del MISMO `.env` (compose lo lee automáticamente del directorio).
+#
+# Arranque (en la Pi5, ARM64 real; con el .env y los certs ya colocados):
+#   cp .env.example .env   # y edita CAMCOUNTER_* del device
+#   export CAMCOUNTER_HAILO_GID=$(stat -c '%g' /dev/hailo0)   # o fíjalo en el .env
+#   docker compose up -d --build
+#
+# El runtime nativo (systemd) sigue soportado como PLAN B (ver docs/docker-device.md).
+name: cam-counter
+
+services:
+  edge:
+    build:
+      context: .
+      dockerfile: docker/edge.Dockerfile
+      args:
+        HAILORT_VERSION: "4.23.0"   # DEBE casar con el driver hailo_pci del host
+    image: cam-counter-edge:${CAMCOUNTER_IMAGE_TAG:-dev-hrt4.23.0-arm64}
+    # Mínimo privilegio: SIN privileged; sólo se inyecta el nodo del Hailo.
+    privileged: false
+    devices:
+      - "/dev/hailo0:/dev/hailo0"
+    group_add:
+      # GID NUMÉRICO dueño de /dev/hailo0 en el HOST (stat -c '%g' /dev/hailo0).
+      - "${CAMCOUNTER_HAILO_GID:-0}"
+    env_file:
+      - .env
+    volumes:
+      # SQLite del borde (rw): compartido con la api por el volumen nombrado.
+      - "cam-counter-db:/var/lib/cam-counter"
+      # HEFs del host, read-only (evita una imagen gigante con hailo-models).
+      - "/usr/share/hailo-models:/usr/share/hailo-models:ro"
+      # Material mTLS del device, READ-ONLY: se MONTA, nunca se hornea/commitea.
+      - "${CAMCOUNTER_CERTS_DIR:-./certs}:/etc/cam-counter/certs:ro"
+    healthcheck:
+      # Liveness de producto: sonda barata a /healthz del supervisor (sin curl).
+      test: ["CMD", "python3", "-m", "cam_counter_edge.healthcheck", "http"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: cam-counter-api:${CAMCOUNTER_IMAGE_TAG:-dev}
+    env_file:
+      - .env
+    ports:
+      # Sólo loopback del host: la UI es LAN/local, nunca expuesta a 0.0.0.0.
+      - "127.0.0.1:8088:8088"
+    environment:
+      CAMCOUNTER_PORT: "8088"
+    volumes:
+      # MISMO SQLite del borde, READ-ONLY (la api sólo lee; el borde escribe).
+      - "cam-counter-db:/var/lib/cam-counter:ro"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8088/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  # SQLite WAL del borde, compartido edge(rw)<->api(ro). Persiste entre reinicios.
+  cam-counter-db:

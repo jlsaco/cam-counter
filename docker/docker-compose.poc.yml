@@ -19,11 +19,15 @@
 services:
   edge-poc:
     build:
-      context: .
-      dockerfile: edge.Dockerfile
+      # Contexto = raiz del repo (WP17): la imagen edge necesita v1/edge ademas de
+      # los .deb staged; el contexto es relativo a ESTE compose (docker/), de ahi `..`.
+      context: ..
+      dockerfile: docker/edge.Dockerfile
       args:
         HAILORT_VERSION: "4.23.0"   # DEBE casar con el driver del kernel host
     image: cam-counter-edge:poc
+    # El ENTRYPOINT de la imagen es el supervisor; aqui se ejecuta el probe del spike.
+    entrypoint: ["python3", "/opt/cam-counter/hailo_probe.py"]
     # SIN privileged: solo se inyecta el nodo del Hailo.
     privileged: false
     devices:
