@@ -113,3 +113,24 @@ output "releases_bucket_arn" {
   description = "ARN del bucket S3 de releases OTA + manifiestos de canal."
   value       = module.fleet_releases.bucket_arn
 }
+
+# ───────────────────────── WP04 — IoT Credentials Provider (role alias S3) ─────────────────────────
+#
+# Fuente canónica para `iot-core` (WP futuro): la IoT Policy del dispositivo usa
+# `iot_role_alias_arn` como Resource de `iot:AssumeRoleWithCertificate`, y el provisioning usa
+# `iot_role_alias_name`.
+
+output "iot_role_alias_name" {
+  description = "Nombre del role alias del IoT Credentials Provider (cam-counter-edge-s3-role-alias)."
+  value       = module.iot_credential_provider.role_alias_name
+}
+
+output "iot_role_alias_arn" {
+  description = "ARN del role alias del IoT Credentials Provider. Resource de iot:AssumeRoleWithCertificate en la IoT Policy del device."
+  value       = module.iot_credential_provider.role_alias_arn
+}
+
+output "iot_edge_s3_role_arn" {
+  description = "ARN del rol IAM cam-counter-edge-s3-role que el role alias expone (trust en credentials.iot.amazonaws.com)."
+  value       = module.iot_credential_provider.edge_s3_role_arn
+}
