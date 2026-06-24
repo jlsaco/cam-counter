@@ -46,6 +46,15 @@ mp4 = [
 sync = [
   "boto3>=1.26",
 ]
+# Transporte de sync por MQTT (modo CAMCOUNTER_SYNC_TRANSPORT=iot). paho-mqtt es la
+# librería del publicador (mqtt_publisher.py); boto3 lo usa la subida de clips vía el
+# IoT Credential Provider (iot_credentials.py). Igual que `sync`, NO es dependencia
+# base: el publicador importa paho de forma PEREZOSA y la lógica se testea con fakes.
+# El device en modo iot instala este extra (`pip install .[iot]`).
+iot = [
+  "paho-mqtt>=1.6",
+  "boto3>=1.26",
+]
 
 [tool.setuptools]
 # Layout plano: el paquete importable es `cam_counter_edge`. `tests/` queda fuera.

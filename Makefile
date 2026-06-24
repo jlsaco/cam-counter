@@ -65,9 +65,12 @@ up: $(RUN_DIR)
 > @echo ">> Arrancando api + UI (FastAPI/Uvicorn, video RTSP en vivo)..."
 > @cd $(REPO)/v1/api && nohup $(REPO)/v1/api/run_api.sh \
         > $(RUN_DIR)/api.log 2>&1 & echo $$! > $(RUN_DIR)/api.pid
+# El despachador (sync_dispatch) elige el transporte por CAMCOUNTER_SYNC_TRANSPORT
+# (direct = boto3 directo; iot = MQTT a IoT Core, sin creds AWS directas). Cambiar de
+# transporte = cambiar esa variable en .env (REVERSIBLE). Ver docs/edge-direct-path-cutover.md.
 > @if [ "$(CAMCOUNTER_SYNC_ENABLED)" = "1" ]; then \
-        echo ">> Arrancando cloud-sync (edge -> AWS)..."; \
-        cd $(REPO)/v1/edge && nohup $(VENV_PY) -m cam_counter_edge.sync_runner \
+        echo ">> Arrancando cloud-sync (edge -> AWS, transporte=$${CAMCOUNTER_SYNC_TRANSPORT:-direct})..."; \
+        cd $(REPO)/v1/edge && nohup $(VENV_PY) -m cam_counter_edge.sync_dispatch \
           > $(RUN_DIR)/sync.log 2>&1 & echo $$! > $(RUN_DIR)/sync.pid; \
     else echo ">> cloud-sync DESHABILITADO (CAMCOUNTER_SYNC_ENABLED!=1)"; fi
 > @sleep 6
@@ -80,7 +83,9 @@ down:
 > @-[ -f $(RUN_DIR)/sync.pid ] && kill $$(cat $(RUN_DIR)/sync.pid) 2>/dev/null || true
 > @-pkill -f 'uvicorn app:app' 2>/dev/null || true
 > @-pkill -f 'cam_counter_edge.app' 2>/dev/null || true
+> @-pkill -f 'cam_counter_edge.sync_dispatch' 2>/dev/null || true
 > @-pkill -f 'cam_counter_edge.sync_runner' 2>/dev/null || true
+> @-pkill -f 'cam_counter_edge.mqtt_publisher' 2>/dev/null || true
 > @rm -f $(RUN_DIR)/api.pid $(RUN_DIR)/edge.pid $(RUN_DIR)/sync.pid
 > @echo ">> Parado. (El legacy NO se rearranca solo: usa 'make legacy-start' si lo quieres.)"
 
@@ -117,8 +122,8 @@ api:
 > cd $(REPO)/v1/api && $(REPO)/v1/api/run_api.sh
 
 sync:
-> @echo ">> cloud-sync en primer plano (Ctrl-C para parar). Drena eventos a AWS."
-> cd $(REPO)/v1/edge && $(VENV_PY) -m cam_counter_edge.sync_runner
+> @echo ">> cloud-sync en primer plano (Ctrl-C). Transporte=$${CAMCOUNTER_SYNC_TRANSPORT:-direct} (direct|iot)."
+> cd $(REPO)/v1/edge && $(VENV_PY) -m cam_counter_edge.sync_dispatch
 
 # --- RTSP de la camara ------------------------------------------------------
 rtsp:
@@ -136,9 +141,9 @@ legacy-start:
 # --- Setup ------------------------------------------------------------------
 install:
 > @test -d $(REPO)/.venv || $(SYS_PY) -m venv $(REPO)/.venv
-> $(VENV_PY) -m pip install -e $(REPO)/v1/edge
+> @# Extras sync+iot: boto3 (camino directo + clips) y paho-mqtt (transporte iot).
+> $(VENV_PY) -m pip install -e '$(REPO)/v1/edge[sync,iot]'
 > $(VENV_PY) -m pip install -r $(REPO)/v1/api/requirements.txt
-> $(VENV_PY) -m pip install boto3
 > @$(MAKE) --no-print-directory build-ui
 
 build-ui:

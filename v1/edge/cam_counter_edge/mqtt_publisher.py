@@ -49,6 +49,7 @@ __all__ = [
     "MqttPublisher",
     "PublishOutcome",
     "derive_topic_prefix",
+    "missing_iot_cert_material",
     "validate_thing_topic",
     "main",
 ]
@@ -465,6 +466,36 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 
 
+# Material mTLS OBLIGATORIO del device en modo ``iot`` (lo escribe provision-device.sh).
+_IOT_CERT_ENV = (
+    "CAMCOUNTER_IOT_CERT_PATH",
+    "CAMCOUNTER_IOT_KEY_PATH",
+    "CAMCOUNTER_IOT_ROOT_CA_PATH",
+)
+
+
+def missing_iot_cert_material(
+    env: dict[str, str], *, exists: Callable[[str], bool] | None = None
+) -> list[str]:
+    """Devuelve los problemas de cert/key/CA mTLS del modo ``iot`` (fail-closed al boot).
+
+    En modo ``iot`` el device se autentica con su certificado X.509 (MQTT mTLS Y el IoT
+    Credential Provider de los clips); sin ese material NO puede ni publicar ni subir
+    clips. Devuelve la lista de motivos (var sin definir o fichero inexistente) para que
+    el entrypoint ABORTE en vez de arrancar mudo y reintentar para siempre. Lista vacía =
+    todo presente. ``exists`` es inyectable en tests (por defecto ``os.path.isfile``).
+    """
+    check = exists if exists is not None else os.path.isfile
+    reasons: list[str] = []
+    for name in _IOT_CERT_ENV:
+        path = (env.get(name) or "").strip()
+        if not path:
+            reasons.append(f"falta {name} (material mTLS del device)")
+        elif not check(path):
+            reasons.append(f"{name}={path!r} no existe")
+    return reasons
+
+
 def _build_clip_provider() -> Callable[[], AwsClients] | None:
     """Construye el provider de credenciales del IoT Credential Provider, si hay config.
 
@@ -513,6 +544,19 @@ def main(argv: list[str] | None = None) -> int:
         _log.error(
             "mqtt-publisher: faltan CAMCOUNTER_IOT_THING_NAME/CAMCOUNTER_IOT_ENDPOINT; "
             "provisiona el device (scripts/provision-device.sh) antes de modo iot."
+        )
+        return 2
+
+    # Fail-closed al boot: sin el material mTLS (cert/key/CA) el modo iot no puede
+    # autenticarse (ni MQTT ni el IoT Credential Provider de los clips). Abortamos en
+    # vez de arrancar mudo: el camino directo está cortado, así que degradar a "sin
+    # certs" dejaría al device SIN sincronizar y sin avisar.
+    cert_problems = missing_iot_cert_material(dict(os.environ))
+    if cert_problems:
+        _log.error(
+            "mqtt-publisher: material mTLS del device incompleto (%s); "
+            "provisiona/copia el bundle (scripts/provision-device.sh) antes de modo iot.",
+            "; ".join(cert_problems),
         )
         return 2
 
