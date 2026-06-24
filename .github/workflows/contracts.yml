@@ -1,0 +1,55 @@
+name: contracts
+
+# Gate de reconciliación de contratos (WP02).
+#
+# Ata el payload MQTT de cruces (= crossing_event.schema.json VERBATIM) y el
+# desired de la named shadow `line-config` (= line_config.schema.json VERBATIM) a
+# sus contratos canónicos de `contracts/`, y FALLA CERRADO ante cualquier campo
+# inventado (count_delta, line_config_version, direction_positive, version) o
+# drift. Ver docs/contracts-reconciliation.md y tests/contracts/.
+#
+# NO toca AWS, NO necesita el paquete cam_counter_edge ni boto3: sólo jsonschema
+# + pytest, para que el gate sea barato y aislado.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      contracts: ${{ steps.filter.outputs.contracts }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            contracts:
+              - 'contracts/**'
+              - 'tests/contracts/**'
+              - '.github/workflows/contracts.yml'
+
+  validate-contracts:
+    needs: changes
+    if: ${{ needs.changes.outputs.contracts == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar deps del gate (jsonschema + pytest, aisladas)
+        run: python -m pip install -r tests/contracts/requirements.txt
+
+      - name: Gate de contratos (valida ejemplos; falla cerrado)
+        run: python -m pytest tests/contracts -q -rs

@@ -37,6 +37,7 @@ build/
 .ruff_cache/
 # Entornos virtuales locales (la verificación usa un venv efímero).
 .venv/
+.venv-contracts/
 venv/
 # SQLite local del borde/API (datos de runtime; jamás se commitea).
 *.db

@@ -1,0 +1,4 @@
+# Dependencias del gate de contratos (tests/contracts). Aisladas a propósito: el
+# gate sólo necesita jsonschema + pytest, NO el paquete cam_counter_edge ni boto3.
+jsonschema==4.23.0
+pytest==8.3.4

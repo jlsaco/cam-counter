@@ -1,0 +1,12 @@
+{
+  "event_id": "ad09d7a998c40402cd3897f0ea263a697bbef2c4",
+  "site_id": "tienda",
+  "device_id": "rpi5-pasillo",
+  "camera_id": "rpi5-pasillo-cam2",
+  "track_id": "track-99",
+  "crossing_seq": 1,
+  "direction": "out",
+  "ts_event_ms": 1718900123000,
+  "ts_event_iso": "2024-06-20T16:15:23.000Z",
+  "schema_version": 1
+}
