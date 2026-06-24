@@ -77,3 +77,14 @@ dist/
 
 # Clips de video generados en runtime (media local; se sube a S3).
 /v1/clips/
+
+# ───── Provisioning IoT por-device (scripts/provision-device.sh) ─────
+# Salida del provisioning: certs, llave privada, .env y device-bundle.tar.gz de cada Pi.
+# NADA de esto se versiona JAMAS (la llave privada nunca sale del host de provisioning).
+/out/
+# Belt-and-suspenders: certs/llaves/CA/bundles sueltos, esten donde esten.
+*.cert.pem
+*.csr.pem
+*.private.key
+AmazonRootCA1.pem
+device-bundle*.tar.gz
