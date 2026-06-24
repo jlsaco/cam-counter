@@ -134,3 +134,43 @@ output "iot_edge_s3_role_arn" {
   description = "ARN del rol IAM cam-counter-edge-s3-role que el role alias expone (trust en credentials.iot.amazonaws.com)."
   value       = module.iot_credential_provider.edge_s3_role_arn
 }
+
+# ───────────────────────── WP10 — Cognito (auth de operadores de flota) ─────────────────────────
+#
+# Fuente canónica para api-dashboard (authorizer Cognito de API Gateway), amplify (WP13: config
+# de auth de la SPA) y la validación WP11 (curl + JWT con `cognito_test_client_id`).
+
+output "cognito_user_pool_id" {
+  description = "ID del User Pool de operadores de flota. Authorizer de API Gateway + config de Amplify + admin-initiate-auth."
+  value       = module.cognito.user_pool_id
+}
+
+output "cognito_user_pool_arn" {
+  description = "ARN del User Pool. Resource del authorizer Cognito de API Gateway."
+  value       = module.cognito.user_pool_arn
+}
+
+output "cognito_hosted_ui_domain" {
+  description = "Domain (prefijo) de la Hosted UI de Cognito. FQDN: <domain>.auth.us-east-1.amazoncognito.com."
+  value       = module.cognito.hosted_ui_domain
+}
+
+output "cognito_web_client_id" {
+  description = "App client ID de la SPA WEB (sin secret, PKCE). Lo consume Amplify/la SPA de flota."
+  value       = module.cognito.web_client_id
+}
+
+output "cognito_test_client_id" {
+  description = "App client ID de TEST (ADMIN_NO_SRP_AUTH, sin callback web). Para validar la API con curl + JWT sin depender de Amplify."
+  value       = module.cognito.test_client_id
+}
+
+output "cognito_identity_pool_id" {
+  description = "ID del Identity Pool de flota. Federa los JWT a credenciales AWS de corta vida (SigV4)."
+  value       = module.cognito.identity_pool_id
+}
+
+output "cognito_authenticated_role_arn" {
+  description = "ARN del rol IAM authenticated read-only del Identity Pool."
+  value       = module.cognito.authenticated_role_arn
+}

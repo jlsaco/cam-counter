@@ -171,3 +171,35 @@ module "iot_credential_provider" {
     managed_by = "mad-runner"
   }
 }
+
+# ═══════════════════════════════════ WP10 — Cognito (auth de operadores de flota) ═══════════════════════════════════
+#
+# User Pool `cam-counter-fleet-users` (self-signup OFF, MFA TOTP) + domain Hosted UI + app
+# client WEB SPA sin secret (Auth Code + PKCE) + app client de TEST sin callback web
+# (ADMIN_NO_SRP_AUTH, para validar la API con curl + JWT) + Identity Pool + rol authenticated
+# read-only + grupos operators/admins. Autentica PERSONAS de la CONSOLA cloud (no la UI local
+# del Pi); INDEPENDIENTE del camino IoT. Apila sobre WP09; ESTRICTAMENTE ADITIVO (F1): sólo
+# añade recursos nuevos; no toca PR02–PR04, PR11 ni el IoT Credentials Provider.
+#
+# DOS proveedores: los recursos de Cognito usan el proveedor por defecto (F3 dual-case completo)
+# y el rol IAM `authenticated` usa el IAM-safe `aws.iam` (claves de tag case-insensitive). El
+# rol read-only se acota a los ARNs REALES de las tablas events/devices y del bucket de media ya
+# aplicados (least-privilege concreto, no `*`). El callback web es un PLACEHOLDER Amplify que
+# WP13 reconcilia con un update IN-PLACE (no force-new del client).
+module "cognito" {
+  source = "../../modules/cognito"
+
+  providers = {
+    aws     = aws
+    aws.iam = aws.iam
+  }
+
+  events_table_arn  = module.events_table.table_arn
+  devices_table_arn = module.device_registry.table_arn
+  media_bucket_arn  = module.media_bucket.bucket_arn
+
+  tags = {
+    project    = "cam-counter"
+    managed_by = "mad-runner"
+  }
+}
