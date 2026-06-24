@@ -1,0 +1,8 @@
+# Dependencias de TEST de las lambdas de la API de flota (fleet-api / clip-presign).
+# En el runtime de Lambda boto3/botocore vienen incluidos; aquí se fijan para los tests x86 en
+# CI y para `moto` (DynamoDB/S3 simulados). NO son dependencias de empaquetado: el zip de cada
+# lambda contiene SÓLO su `handler.py` (ver terraform/modules/api-dashboard).
+boto3>=1.34
+botocore>=1.34
+moto[dynamodb,s3]>=5.0
+pytest>=8.0
