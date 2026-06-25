@@ -39,3 +39,17 @@ Test del camino **sin-tag** de `version.py` (crea un repo git temporal, 1 commit
 ```bash
 python3 -m pytest scripts/test_version.py -q   # o: python3 scripts/test_version.py
 ```
+
+## `cognito-create-admin.sh`
+Alta del **primer operador admin** en el User Pool de flota (`cam-counter-fleet-users`, WP10)
+con **AdminCreateUser**. Se hace **fuera de Terraform** a propósito: la password **nunca** debe
+acabar en git ni en el tfstate. Llega por ENV `CAMCOUNTER_ADMIN_PASSWORD` y sólo viaja a la API
+de Cognito. Idempotente (si el usuario existe, omite la creación). Fija password permanente y
+añade el usuario al grupo `cam-counter-admins`; el **MFA TOTP** del pool sigue siendo
+obligatorio en el primer login.
+
+```bash
+export CAMCOUNTER_ADMIN_EMAIL="ops@example.com"
+export CAMCOUNTER_ADMIN_PASSWORD='…'      # NO en git; fuerte (>=12, may/min/núm/símbolo)
+bash scripts/cognito-create-admin.sh      # resuelve el user-pool-id del output de Terraform
+```

@@ -155,9 +155,14 @@ porque el nombre de regla de IoT **no admite `-`** (solo `[a-zA-Z0-9_]`).
 |---|---|---|
 | **API Gateway (REST/HTTP API)** | `cam-counter-api` | Backend cloud (consola de flota). Distinto de la API local FastAPI del Pi. |
 | **Stage de API** | `prod` | Único stage (entorno `prod`). |
-| **Cognito User Pool** | `cam-counter-user-pool` | Identidades de operadores de la consola. |
-| **Cognito App Client** | `cam-counter-console-client` | Cliente SPA de la consola. |
-| **Cognito Identity Pool** | `cam-counter-identity-pool` | Credenciales federadas para la consola. |
+| **Cognito User Pool** | `cam-counter-fleet-users` | Identidades de operadores de la consola de flota. Self-signup OFF, MFA TOTP. |
+| **Cognito domain (Hosted UI)** | `cam-counter-fleet-950639281773` | Prefijo del domain de la Hosted UI (incluye account-id por unicidad global). |
+| **Cognito App Client (web)** | `cam-counter-fleet-web-client` | SPA de la consola: sin secret, Auth Code + PKCE. |
+| **Cognito App Client (test)** | `cam-counter-fleet-test-client` | `ADMIN_NO_SRP_AUTH`, sin callback web: valida la API con curl + JWT (resuelve WP11→WP13). |
+| **Cognito Identity Pool** | `cam-counter-fleet-identity` | Credenciales federadas read-only para la consola. |
+| **Rol IAM authenticated** | `cam-counter-fleet-auth-role` | Rol del Identity Pool (read-only DynamoDB events/devices + GetObject media, TLS-only). |
+| **Grupo de operadores** | `cam-counter-operators` | Claim `cognito:groups`; precedencia 10. |
+| **Grupo de administradores** | `cam-counter-admins` | Claim `cognito:groups`; precedencia 1. |
 | **Amplify app (consola)** | `cam-counter-console` | Hosting de la SPA de flota. (La **UI local** del Pi NO usa Amplify.) |
 | **Imagen Docker (edge)** | `cam-counter/edge` | Tag por versión SemVer (§ versionado `CLAUDE.md`). |
 | **Imagen Docker (api)** | `cam-counter/api` | — |
@@ -260,6 +265,7 @@ las que aparecían en borradores/specs y **quedan prohibidas**.
 | 9 | **Thing name vs rol per-Pi** | renombrar el rol a `cam-counter-{s}-{d}`; renombrar el thing a `cam-counter-edge-{s}-{d}` | **Thing `cam-counter-{s}-{d}`** + **Rol `cam-counter-edge-{s}-{d}`** (sin tocar el rol) | El aislamiento es por ThingName, no por nombre de rol; el rol existente no se renombra (§8, §12). |
 | 10 | **Named shadows** | `lineConfig`/`line_config`, `cmd`/`commands` como shadow | **`line-config`** y **`command`** | Kebab; nombres cortos y de dominio único. |
 | 11 | **Directorio en el device** | `/opt/cam-counter/`, `~/.cam-counter/` | **`/etc/cam-counter/`** | Config + identidad de sistema; estándar FHS para config de servicio. |
+| 12 | **Identidades Cognito de la consola** | `cam-counter-user-pool`, `cam-counter-console-client`, `cam-counter-identity-pool` | **`cam-counter-fleet-users`** / **`cam-counter-fleet-web-client`** (+ **`cam-counter-fleet-test-client`**) / **`cam-counter-fleet-identity`** | Infijo `fleet-` que agrupa las identidades de la **consola de flota cloud** y las distingue de la UI local del Pi; el client de **test** (`ADMIN_NO_SRP_AUTH`, sin callback) hace alcanzable el acceptance «curl con JWT» antes de que exista Amplify (WP13). Implementado en `terraform/modules/cognito` (WP10). |
 
 ---
 
@@ -277,6 +283,14 @@ nomenclatura **debe igualar** el canon de este documento. Ejemplos de pares a ve
 | `events_ingest_lambda_name` | `cam-counter-events-ingest` |
 | `crossing_rule_name` | `cam_counter_crossing_ingest` |
 | `name_prefix` (iam-edge, **existente**) | `cam-counter-edge` |
+| `user_pool_name` (cognito) | `cam-counter-fleet-users` |
+| `domain_prefix` (cognito) | `cam-counter-fleet-950639281773` |
+| `web_client_name` (cognito) | `cam-counter-fleet-web-client` |
+| `test_client_name` (cognito) | `cam-counter-fleet-test-client` |
+| `identity_pool_name` (cognito) | `cam-counter-fleet-identity` |
+| `authenticated_role_name` (cognito) | `cam-counter-fleet-auth-role` |
+| `operators_group_name` (cognito) | `cam-counter-operators` |
+| `admins_group_name` (cognito) | `cam-counter-admins` |
 
 > La verificación es **textual**: el `default` del HCL se compara carácter a carácter con la
 > celda "Canon" correspondiente. Una discrepancia es un fallo de revisión del WP que
