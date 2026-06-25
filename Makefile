@@ -65,10 +65,20 @@ up: $(RUN_DIR)
 > @echo ">> Arrancando api + UI (FastAPI/Uvicorn, video RTSP en vivo)..."
 > @cd $(REPO)/v1/api && nohup $(REPO)/v1/api/run_api.sh \
         > $(RUN_DIR)/api.log 2>&1 & echo $$! > $(RUN_DIR)/api.pid
+# El transporte de sync lo decide CAMCOUNTER_SYNC_TRANSPORT (def 'direct'):
+#   direct -> sync_runner (boto3 directo a DynamoDB/S3, credenciales AWS)
+#   iot    -> mqtt_publisher (MQTT a IoT Core + clips via role alias; SIN creds AWS directas)
+# El corte direct<->iot es reversible (sólo cambia el .env). Un único proceso de sync.
 > @if [ "$(CAMCOUNTER_SYNC_ENABLED)" = "1" ]; then \
-        echo ">> Arrancando cloud-sync (edge -> AWS)..."; \
-        cd $(REPO)/v1/edge && nohup $(VENV_PY) -m cam_counter_edge.sync_runner \
-          > $(RUN_DIR)/sync.log 2>&1 & echo $$! > $(RUN_DIR)/sync.pid; \
+        if [ "$(CAMCOUNTER_SYNC_TRANSPORT)" = "iot" ]; then \
+          echo ">> Arrancando sync por MQTT (modo iot: IoT Core, sin creds AWS directas)..."; \
+          cd $(REPO)/v1/edge && nohup $(VENV_PY) -m cam_counter_edge.mqtt_publisher \
+            > $(RUN_DIR)/sync.log 2>&1 & echo $$! > $(RUN_DIR)/sync.pid; \
+        else \
+          echo ">> Arrancando cloud-sync directo (edge -> AWS DynamoDB/S3)..."; \
+          cd $(REPO)/v1/edge && nohup $(VENV_PY) -m cam_counter_edge.sync_runner \
+            > $(RUN_DIR)/sync.log 2>&1 & echo $$! > $(RUN_DIR)/sync.pid; \
+        fi; \
     else echo ">> cloud-sync DESHABILITADO (CAMCOUNTER_SYNC_ENABLED!=1)"; fi
 > @sleep 6
 > @$(MAKE) --no-print-directory status
@@ -81,6 +91,7 @@ down:
 > @-pkill -f 'uvicorn app:app' 2>/dev/null || true
 > @-pkill -f 'cam_counter_edge.app' 2>/dev/null || true
 > @-pkill -f 'cam_counter_edge.sync_runner' 2>/dev/null || true
+> @-pkill -f 'cam_counter_edge.mqtt_publisher' 2>/dev/null || true
 > @rm -f $(RUN_DIR)/api.pid $(RUN_DIR)/edge.pid $(RUN_DIR)/sync.pid
 > @echo ">> Parado. (El legacy NO se rearranca solo: usa 'make legacy-start' si lo quieres.)"
 
@@ -117,8 +128,14 @@ api:
 > cd $(REPO)/v1/api && $(REPO)/v1/api/run_api.sh
 
 sync:
-> @echo ">> cloud-sync en primer plano (Ctrl-C para parar). Drena eventos a AWS."
-> cd $(REPO)/v1/edge && $(VENV_PY) -m cam_counter_edge.sync_runner
+> @echo ">> sync en primer plano (Ctrl-C para parar). Transporte=$(CAMCOUNTER_SYNC_TRANSPORT)."
+> @if [ "$(CAMCOUNTER_SYNC_TRANSPORT)" = "iot" ]; then \
+        echo ">> modo iot: publica por MQTT (IoT Core), clips via role alias, SIN creds AWS directas."; \
+        cd $(REPO)/v1/edge && $(VENV_PY) -m cam_counter_edge.mqtt_publisher; \
+    else \
+        echo ">> modo direct: drena eventos a AWS DynamoDB/S3 (boto3 directo)."; \
+        cd $(REPO)/v1/edge && $(VENV_PY) -m cam_counter_edge.sync_runner; \
+    fi
 
 # --- RTSP de la camara ------------------------------------------------------
 rtsp:

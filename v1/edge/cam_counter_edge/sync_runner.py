@@ -14,8 +14,17 @@ llegaban a la nube. Este runner lo ejecuta en bucle, desacoplado del conteo:
 Corre en el VENV (tiene ``boto3`` + ``cam_counter_edge``); NO necesita cv2/Hailo,
 así que un fallo de red aquí jamás afecta al pipeline de detección del edge.
 
+**Selector de transporte (WP16, corte del camino directo):** este runner ES el
+camino DIRECTO (boto3 -> DynamoDB/S3 con credenciales AWS). Sólo opera cuando
+``CAMCOUNTER_SYNC_TRANSPORT`` vale ``direct`` (su valor por defecto). Cuando vale
+``iot`` el camino directo queda INERTE (sale sin construir clientes boto3 ni asumir
+rol): en ese modo el proceso de borde sincroniza por MQTT (``mqtt_publisher``) y NO
+usa credenciales AWS directas. El corte es REVERSIBLE: volver a ``direct`` reactiva
+este runner sin tocar nada más.
+
 Config por entorno (sin secretos en el repo):
   CAMCOUNTER_SYNC_ENABLED      '1' para arrancar (si no, sale sin hacer nada).
+  CAMCOUNTER_SYNC_TRANSPORT    'direct' (def) corre este camino; 'iot' lo deja inerte.
   CAMCOUNTER_DB_PATH           SQLite del borde (igual que edge/api).
   CAMCOUNTER_DEVICE_ID         device del Pi (heartbeat).
   CAMCOUNTER_AWS_REGION        región AWS (def us-east-1).
@@ -45,9 +54,24 @@ from .sync import (
     is_precondition_failed,
 )
 
-__all__ = ["main"]
+__all__ = ["TRANSPORT_DIRECT", "TRANSPORT_IOT", "main", "resolve_transport"]
 
 _log = logging.getLogger(__name__)
+
+# Valores canónicos del selector de transporte (CLAUDE.md / provision-device.sh).
+TRANSPORT_DIRECT = "direct"
+TRANSPORT_IOT = "iot"
+
+
+def resolve_transport() -> str:
+    """Lee ``CAMCOUNTER_SYNC_TRANSPORT`` normalizado (def ``direct``).
+
+    Sólo ``iot`` (case-insensitive) selecciona el camino MQTT; cualquier otro valor
+    (incluido vacío) cae a ``direct`` para que el corte sea explícito y reversible:
+    nadie acaba en modo ``iot`` por un typo en el ``.env``.
+    """
+    value = os.environ.get("CAMCOUNTER_SYNC_TRANSPORT", "").strip().lower()
+    return TRANSPORT_IOT if value == TRANSPORT_IOT else TRANSPORT_DIRECT
 
 
 def _env(name: str, default: str) -> str:
@@ -116,6 +140,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if not _env_flag("CAMCOUNTER_SYNC_ENABLED"):
         _log.info("cam-counter-sync: CAMCOUNTER_SYNC_ENABLED no está activo; nada que hacer.")
+        return 0
+
+    # WP16 — corte del camino directo. En modo 'iot' el camino directo NO corre: el
+    # proceso de borde sincroniza por MQTT (mqtt_publisher) y deja de usar
+    # credenciales AWS directas. Salimos ANTES de construir cualquier cliente boto3 o
+    # asumir rol STS (fail-closed contra creds directas). Reversible: volver a 'direct'.
+    transport = resolve_transport()
+    if transport == TRANSPORT_IOT:
+        _log.info(
+            "cam-counter-sync: CAMCOUNTER_SYNC_TRANSPORT=iot; el camino DIRECTO queda "
+            "inerte (sin boto3 ni rol STS). La sincronización va por MQTT "
+            "(cam_counter_edge.mqtt_publisher). Vuelve a 'direct' para reactivarlo."
+        )
         return 0
 
     db_path = _env("CAMCOUNTER_DB_PATH", "cam-counter.db")

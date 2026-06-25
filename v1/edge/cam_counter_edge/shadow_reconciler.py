@@ -705,8 +705,8 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - I/O real
     reconciliador de forma aislada (útil para depurar). Edge-first: nunca muere por
     un fallo de red.
     """
-    import signal
-    import threading
+    import signal  # noqa: PLC0415
+    import threading  # noqa: PLC0415
 
     logging.basicConfig(level=logging.INFO)
 
