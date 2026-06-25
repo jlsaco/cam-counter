@@ -48,6 +48,7 @@ from .identifiers import (
 from .types import CrossingEvent
 
 __all__ = [
+    "IDEMPOTENT_CONDITION",
     "AwsClients",
     "CloudSync",
     "EventSyncOutcome",
@@ -58,7 +59,16 @@ __all__ = [
     "event_keys",
     "is_conditional_check_failed",
     "is_precondition_failed",
+    "upload_event_clip",
 ]
+
+# Condición idempotente del conditional-put, ALINEADA VERBATIM con la Lambda de
+# ingesta (``lambdas/events_ingest/ddb.py``). El device y la Lambda DEBEN usar la
+# MISMA condición sobre la MISMA (PK, SK): así, en dual-run (camino directo + MQTT),
+# un mismo ``event_id`` con un ``ts_event_ms`` inmutable produce la MISMA SK y NO se
+# duplica, lo decida quien lo decida. Si divergieran (p.ej. sólo PK), la SK podría
+# diferir y el evento se duplicaría.
+IDEMPOTENT_CONDITION = "attribute_not_exists(PK) AND attribute_not_exists(SK)"
 
 _log = logging.getLogger(__name__)
 
@@ -266,6 +276,59 @@ def _ddb_event_item(event: CrossingEvent) -> dict[str, dict[str, str]]:
 
 
 # --------------------------------------------------------------------------- #
+# Subida de clip a S3 (retry-safe) — compartida por el camino directo y MQTT
+# --------------------------------------------------------------------------- #
+
+
+def upload_event_clip(
+    s3: _S3Like,
+    store: Any,
+    clip_row: dict,
+    media_bucket: str,
+) -> tuple[str | None, bool, bool]:
+    """Sube el clip del evento a ``media_bucket`` con ``If-None-Match: *``, retry-safe.
+
+    Idéntica idempotencia en el camino directo (``CloudSync``) y en el publicador
+    MQTT (modo ``iot``, donde ``s3`` proviene de credenciales temporales del IoT
+    Credential Provider): la ``s3_key_planned`` es estable porque el ``event_id`` es
+    determinista, así que un reintento NO pisa un upload parcial previo.
+
+    Returns:
+        ``(clip_key, uploaded, already_present)``. ``clip_key`` es ``None`` si no hay
+        clip local que subir (el evento se publica/sincroniza igual, sin media).
+    """
+    local_path = clip_row.get("local_path")
+    s3_key = clip_row.get("s3_key_planned")
+    if not local_path or not s3_key or not Path(local_path).is_file():
+        return None, False, False
+
+    row_id = int(clip_row["id"])
+    store.set_clip_upload_status(row_id, "uploading", increment_attempts=True)
+    ext = s3_key.rsplit(".", 1)[-1].lower()
+    content_type = _CONTENT_TYPES.get(ext, "application/octet-stream")
+    body = Path(local_path).read_bytes()
+    try:
+        # If-None-Match: * => la PUT falla con PreconditionFailed si la clave ya
+        # existe (no pisa un upload parcial/previo del mismo event_id).
+        s3.put_object(
+            Bucket=media_bucket,
+            Key=s3_key,
+            Body=body,
+            ContentType=content_type,
+            IfNoneMatch="*",
+        )
+        store.set_clip_upload_status(row_id, "uploaded")
+        return s3_key, True, False
+    except Exception as exc:  # noqa: BLE001 — clasificamos abajo
+        if is_precondition_failed(exc):
+            # El objeto ya estaba (reintento idempotente): clave válida.
+            store.set_clip_upload_status(row_id, "uploaded")
+            return s3_key, False, True
+        store.set_clip_upload_status(row_id, "failed")
+        raise
+
+
+# --------------------------------------------------------------------------- #
 # Resultados de la sincronización (observabilidad / aserciones de test)
 # --------------------------------------------------------------------------- #
 
@@ -381,39 +444,13 @@ class CloudSync:
     ) -> tuple[str | None, bool, bool]:
         """Sube el clip del evento a S3 (``If-None-Match: *``), retry-safe.
 
-        Returns:
-            ``(clip_key, uploaded, already_present)``. ``clip_key`` es ``None`` si
-            no hay clip local que subir (el evento se sincroniza igual, sin media).
+        Delega en ``upload_event_clip`` (función de módulo) para que el camino
+        directo y el publicador MQTT (modo ``iot``) compartan EXACTAMENTE la misma
+        subida idempotente de clips.
         """
-        local_path = clip_row.get("local_path")
-        s3_key = clip_row.get("s3_key_planned")
-        if not local_path or not s3_key or not Path(local_path).is_file():
-            return None, False, False
-
-        row_id = int(clip_row["id"])
-        self._store.set_clip_upload_status(row_id, "uploading", increment_attempts=True)
-        ext = s3_key.rsplit(".", 1)[-1].lower()
-        content_type = _CONTENT_TYPES.get(ext, "application/octet-stream")
-        body = Path(local_path).read_bytes()
-        try:
-            # If-None-Match: * => la PUT falla con PreconditionFailed si la clave
-            # ya existe (no pisa un upload parcial/previo del mismo event_id).
-            self._aws().s3.put_object(
-                Bucket=self._media_bucket,
-                Key=s3_key,
-                Body=body,
-                ContentType=content_type,
-                IfNoneMatch="*",
-            )
-            self._store.set_clip_upload_status(row_id, "uploaded")
-            return s3_key, True, False
-        except Exception as exc:  # noqa: BLE001 — clasificamos abajo
-            if is_precondition_failed(exc):
-                # El objeto ya estaba (reintento idempotente): clave válida.
-                self._store.set_clip_upload_status(row_id, "uploaded")
-                return s3_key, False, True
-            self._store.set_clip_upload_status(row_id, "failed")
-            raise
+        return upload_event_clip(
+            self._aws().s3, self._store, clip_row, self._media_bucket
+        )
 
     # -- conditional put del evento --------------------------------------
 
@@ -429,7 +466,7 @@ class CloudSync:
             self._aws().dynamodb.put_item(
                 TableName=self._events_table,
                 Item=item,
-                ConditionExpression="attribute_not_exists(PK)",
+                ConditionExpression=IDEMPOTENT_CONDITION,
             )
             return True
         except Exception as exc:  # noqa: BLE001
