@@ -113,3 +113,25 @@ output "releases_bucket_arn" {
   description = "ARN del bucket S3 de releases OTA + manifiestos de canal."
   value       = module.fleet_releases.bucket_arn
 }
+
+# ───────────────────────── WP18 — observabilidad + status path ─────────────────────────
+
+output "alarms_topic_arn" {
+  description = "ARN del topic SNS de alarmas de la flota (alarm_actions/ok_actions)."
+  value       = module.observability.alarms_topic_arn
+}
+
+output "fleet_dashboard_name" {
+  description = "Nombre del dashboard CloudWatch de la flota (cam-counter-fleet)."
+  value       = module.observability.dashboard_name
+}
+
+output "device_status_table_name" {
+  description = "Tabla DynamoDB de status de presencia (respaldo NO opcional del LWT)."
+  value       = module.observability.device_status_table_name
+}
+
+output "presence_rule_name" {
+  description = "Nombre de la IoT Topic Rule de Lifecycle Events de desconexión."
+  value       = module.observability.presence_rule_name
+}
