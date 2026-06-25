@@ -1,0 +1,5 @@
+# Contexto de build mínimo: sólo lo que el Dockerfile COPIA.
+*
+!edge.Dockerfile
+!probe_hailo.py
+!raspberrypi-archive-keyring.pgp

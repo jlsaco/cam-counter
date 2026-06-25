@@ -1,0 +1,7 @@
+# Blobs stageados por run-poc.sh en el contexto de build. NUNCA se commitean:
+# el keyring es público pero se obtiene del host en runtime; los modelos/.deb son
+# binarios propietarios de Hailo y no pertenecen al repo.
+raspberrypi-archive-keyring.pgp
+*.deb
+*.hef
+__pycache__/
