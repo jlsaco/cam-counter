@@ -134,3 +134,34 @@ module "fleet_releases" {
     managed_by = "mad-runner"
   }
 }
+
+# ═══════════════════════════════════ WP18 — observabilidad + status path ═══════════════════════════════════
+#
+# Cierre: alarmas CloudWatch (ingest/status/throttles/DLQ/API), dashboard `cam-counter-fleet`,
+# tabla de status de presencia y la IoT Rule de Lifecycle Events que la alimenta (respaldo NO
+# opcional del LWT). Aditivo y autocontenido (F1): sólo AÑADE; las alarmas referencian destinos
+# por dimensión (nombre), no por referencia Terraform, así que el plan no falla aunque un
+# destino aún no exista. Recibe ambos proveedores: el por defecto (CloudWatch/IoT/SNS/DynamoDB,
+# dual-case F3) y el IAM-safe `aws.iam` (rol de la IoT Rule, claves de tag case-insensitive).
+#
+# `api_id` y `dlq_name` se dejan vacíos hasta que esos recursos existan (módulos futuros de
+# API Gateway / DLQ): mientras tanto NO se crean alarmas huérfanas. Rellenar aquí cuando se
+# apliquen. La detección de caída por broker (IoT Lifecycle Events) requiere habilitarlos a
+# nivel de cuenta (IoT Core → Settings → Event-based messages); ver docs/runbooks.md.
+module "observability" {
+  source = "../../modules/observability"
+
+  providers = {
+    aws     = aws
+    aws.iam = aws.iam
+  }
+
+  # Destinos por nombre (defaults reales del producto). Rellenar api_id/dlq_name al aplicarlos.
+  api_id   = ""
+  dlq_name = ""
+
+  tags = {
+    project    = "cam-counter"
+    managed_by = "mad-runner"
+  }
+}
