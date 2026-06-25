@@ -46,6 +46,15 @@ mp4 = [
 sync = [
   "boto3>=1.26",
 ]
+# Cliente MQTT del publicador edge→IoT Core (mqtt_publisher.py, transporte `iot`).
+# NO es dependencia base: paho se importa de forma PEREZOSA (igual que boto3/Hailo),
+# así que el drenado/ack/idempotencia/mapeo se testean en CI x86 con un cliente MQTT
+# fake, sin broker ni red. El device en modo `iot`/dual-run instala este extra (trae
+# boto3 para la subida de clips vía el IoT Credential Provider).
+iot = [
+  "paho-mqtt>=1.6",
+  "boto3>=1.26",
+]
 
 [tool.setuptools]
 # Layout plano: el paquete importable es `cam_counter_edge`. `tests/` queda fuera.

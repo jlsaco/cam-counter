@@ -44,6 +44,7 @@ from .sync import (
     is_conditional_check_failed,
     is_precondition_failed,
 )
+from .transport import TRANSPORT_ENV, direct_path_enabled, resolve_transport
 
 __all__ = ["main"]
 
@@ -116,6 +117,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if not _env_flag("CAMCOUNTER_SYNC_ENABLED"):
         _log.info("cam-counter-sync: CAMCOUNTER_SYNC_ENABLED no está activo; nada que hacer.")
+        return 0
+
+    # Selector de transporte (CAMCOUNTER_SYNC_TRANSPORT, default direct). El camino
+    # directo SÓLO corre en `direct` (incluido el dual-run, donde sigue siendo la fuente
+    # de verdad). En `iot` el directo está APAGADO: la sincronización la hace el
+    # publicador MQTT (cam_counter_edge.mqtt_publisher). Cero regresión por defecto.
+    if not direct_path_enabled():
+        _log.info(
+            "cam-counter-sync: %s=%s -> camino directo DESHABILITADO (lo maneja "
+            "cam_counter_edge.mqtt_publisher). Nada que hacer aquí.",
+            TRANSPORT_ENV,
+            resolve_transport(),
+        )
         return 0
 
     db_path = _env("CAMCOUNTER_DB_PATH", "cam-counter.db")

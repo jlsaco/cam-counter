@@ -44,6 +44,13 @@ from .crossing_payload import PayloadContractError, crossing_event_payload, enco
 from .identifiers import validate_device_id
 from .store import Store
 from .sync import AwsClients, is_precondition_failed, upload_event_clip
+from .transport import (
+    DUAL_RUN_ENV,
+    TRANSPORT_ENV,
+    dual_run_enabled,
+    iot_path_enabled,
+    resolve_transport,
+)
 
 __all__ = [
     "MqttPublisher",
@@ -504,6 +511,28 @@ def main(argv: list[str] | None = None) -> int:
     provision-device.sh). Best-effort y edge-first: nunca muere por un fallo de red.
     """
     logging.basicConfig(level=logging.INFO)
+
+    # Selector de transporte (CAMCOUNTER_SYNC_TRANSPORT, default direct). El publicador
+    # MQTT SÓLO corre en `iot` (solo MQTT) o en `direct` + dual-run (paralelo al directo
+    # para validar paridad). En `direct` sin dual-run está APAGADO: arrancar esta unidad
+    # con la config por defecto es un no-op seguro (cero regresión sobre el stack actual).
+    if not iot_path_enabled():
+        _log.info(
+            "mqtt-publisher: %s=%s y %s no activo -> publicador MQTT DESHABILITADO "
+            "(cero regresión; el camino directo maneja la sincronización). Nada que hacer.",
+            TRANSPORT_ENV,
+            resolve_transport(),
+            DUAL_RUN_ENV,
+        )
+        return 0
+    if resolve_transport() != "iot" and dual_run_enabled():
+        _log.info(
+            "mqtt-publisher: DUAL-RUN activo (%s=direct + %s) -> MQTT en paralelo al "
+            "camino directo para validar paridad; la idempotencia (event_id + PK AND SK) "
+            "impide duplicar.",
+            TRANSPORT_ENV,
+            DUAL_RUN_ENV,
+        )
 
     db_path = _env("CAMCOUNTER_DB_PATH", "cam-counter.db")
     device_id = _env("CAMCOUNTER_DEVICE_ID", "demo-pi")
