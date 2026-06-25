@@ -548,6 +548,79 @@ class Store:
             )
         return new_version
 
+    def apply_remote_line_config(self, config: LineConfig) -> int | None:
+        """Aplica una config de línea que viene de la NUBE (Device Shadow desired).
+
+        Regla de arbitraje (idéntica a la del hot-reload local): **gana la versión
+        MAYOR**, ``config_version`` es MONÓTONO. A diferencia de ``set_line_config``
+        (camino de la UI local, que IGNORA el ``config_version`` entrante y hace
+        ``actual + 1`` con CAS optimista), aquí la NUBE es la autoridad sobre el
+        NÚMERO de versión: se escribe ``config.config_version`` VERBATIM **sólo si es
+        ESTRICTAMENTE MAYOR** que el actual en SQLite. Así el ``reported`` converge
+        EXACTAMENTE al ``desired`` (sin bucle de deltas) y no hay split-brain: el
+        SQLite sigue siendo el ÚNICO punto de aplicación y su ``config_version`` el
+        árbitro único.
+
+        - Si ``config.config_version > actual``: escribe la nueva línea con ese mismo
+          ``config_version`` y devuelve el NUEVO valor.
+        - Si ``config.config_version <= actual``: NO toca nada y devuelve ``None``
+          (el desired llegó stale/igual; el caller re-reporta el estado local para
+          que la nube se ponga al día). Atómico para el único escritor vía
+          ``BEGIN IMMEDIATE``.
+        """
+        validate_camera_id(config.camera_id)
+        validate_site_id(config.site_id)
+        validate_device_id(config.device_id)
+        if config.positive_side not in (-1, 1):
+            raise ValueError(
+                f"positive_side debe ser -1 o +1, no {config.positive_side!r}"
+            )
+        incoming = int(config.config_version)
+        ax, ay = _point_xy(config.line.a)
+        bx, by = _point_xy(config.line.b)
+        now = _now_iso()
+        with self._immediate() as cur:
+            row = cur.execute(
+                "SELECT config_version FROM camera_config WHERE camera_id = ?",
+                (config.camera_id,),
+            ).fetchone()
+            current = int(row["config_version"]) if row is not None else 0
+            if incoming <= current:
+                return None
+            cur.execute(
+                "INSERT INTO camera_config ("
+                " camera_id, site_id, device_id, line_ax, line_ay, line_bx, line_by,"
+                " positive_side, positive_label, negative_label, config_version,"
+                " schema_version, updated_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(camera_id) DO UPDATE SET "
+                " site_id=excluded.site_id, device_id=excluded.device_id,"
+                " line_ax=excluded.line_ax, line_ay=excluded.line_ay,"
+                " line_bx=excluded.line_bx, line_by=excluded.line_by,"
+                " positive_side=excluded.positive_side,"
+                " positive_label=excluded.positive_label,"
+                " negative_label=excluded.negative_label,"
+                " config_version=excluded.config_version,"
+                " schema_version=excluded.schema_version,"
+                " updated_at=excluded.updated_at",
+                (
+                    config.camera_id,
+                    config.site_id,
+                    config.device_id,
+                    ax,
+                    ay,
+                    bx,
+                    by,
+                    int(config.positive_side),
+                    config.positive_label,
+                    config.negative_label,
+                    incoming,
+                    int(config.schema_version),
+                    now,
+                ),
+            )
+        return incoming
+
     # -- cola de subidas de clips a S3 (clip_uploads) ---------------------
 
     def enqueue_clip_upload(

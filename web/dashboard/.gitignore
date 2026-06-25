@@ -1,0 +1,16 @@
+# Next.js / Node
+/node_modules
+/.next
+/out
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# Entorno local (NUNCA commitear secretos/endpoints reales)
+.env
+.env.local
+.env*.local
+
+# Logs / misc
+npm-debug.log*
+.DS_Store

@@ -1,0 +1,10 @@
+# Lambda cam-counter-events-ingest — dependencias de RUNTIME.
+#
+# VACÍO a propósito (sólo stdlib): la validación del contrato CrossingEvent se
+# hace VERBATIM con un validador stdlib (contract.py) sobre el schema HORNEADO,
+# sin `jsonschema`, para que el paquete sea AUTOCONTENIDO y Terraform lo empaquete
+# vía `archive_file` sin `pip install` (MAD aplica `terraform apply` sin build).
+#
+# `boto3`/`botocore` los provee el runtime managed de Lambda (python3.12): NO se
+# vendorizan (import perezoso en ddb.py). Si una futura iteración moviera el
+# empaquetado a `pip install -t`, añadir aquí SÓLO lo que el runtime no provea.

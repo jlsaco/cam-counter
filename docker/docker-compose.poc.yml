@@ -1,0 +1,39 @@
+# docker-compose.poc.yml — forma declarativa del runtime del SPIKE WP09 (#45).
+#
+# Equivalente a docker/run-probe.sh pero declarativo. Demuestra el contrato de
+# minimo privilegio para el Hailo en contenedor:
+#   - `devices:` inyecta SOLO /dev/hailo0 (no /dev entero, no privileged).
+#   - `group_add:` aporta el GID del grupo dueño del nodo en el HOST.
+#
+# IMPORTANTE sobre group_add: el valor DEBE ser el GID NUMERICO del nodo en el
+# host (autodetectable con `stat -c '%g' /dev/hailo0`). En esta Pi5 el nodo es
+# root:root 0666 (gid 0); en hosts donde sea root:hailo 0660 hay que poner ahi
+# el GID del grupo `hailo` del host. Por eso run-probe.sh autodetecta el GID:
+# compose no puede interpolar la salida de `stat` por si solo. Ajustar el valor
+# de abajo al GID real del host (export HAILO_GID=$(stat -c '%g' /dev/hailo0)).
+#
+# Uso (en la Pi5, ARM64 real):
+#   HAILO_GID=$(stat -c '%g' /dev/hailo0) \
+#     docker compose -f docker/docker-compose.poc.yml up --build
+
+services:
+  edge-poc:
+    build:
+      context: .
+      dockerfile: edge.Dockerfile
+      args:
+        HAILORT_VERSION: "4.23.0"   # DEBE casar con el driver del kernel host
+    image: cam-counter-edge:poc
+    # SIN privileged: solo se inyecta el nodo del Hailo.
+    privileged: false
+    devices:
+      - "/dev/hailo0:/dev/hailo0"
+    group_add:
+      - "${HAILO_GID:-0}"           # GID NUMERICO dueño de /dev/hailo0 en el host
+    volumes:
+      # HEFs del host, read-only (evita una imagen gigante con hailo-models).
+      - "/usr/share/hailo-models:/usr/share/hailo-models:ro"
+    environment:
+      CAMCOUNTER_HEF_PATH: "/usr/share/hailo-models/yolov8s_h8.hef"
+      # CAMCOUNTER_PROBE_IMAGE: "/tmp/probe_input.jpg"  # montar y descomentar
+    restart: "no"

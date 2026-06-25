@@ -1,0 +1,28 @@
+{
+  "name": "cam-counter-dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Consola web (Next.js App Router) de la flota cam-counter — SOLO LECTURA contra la API de WP11 (fleet-api). El frontend NUNCA habla DynamoDB/S3 directo.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@aws-amplify/adapter-nextjs": "^1.2.30",
+    "@aws-amplify/ui-react": "^6.5.5",
+    "aws-amplify": "^6.6.6",
+    "next": "14.2.15",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "eslint": "8.57.0",
+    "eslint-config-next": "14.2.15",
+    "typescript": "5.5.3"
+  }
+}

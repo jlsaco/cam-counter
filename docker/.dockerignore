@@ -1,0 +1,6 @@
+# Contexto de build minimo: Dockerfile, probe y los .deb staged (no commiteados).
+*
+!edge.Dockerfile
+!hailo_probe.py
+!debs/
+!debs/*.deb

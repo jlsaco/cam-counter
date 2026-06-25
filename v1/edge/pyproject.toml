@@ -46,6 +46,13 @@ mp4 = [
 sync = [
   "boto3>=1.26",
 ]
+# Cliente MQTT para el modo `iot` (publicador WP14 + reconciliador de shadows WP15).
+# NO es dependencia base: `paho.mqtt.client` se importa de forma PEREZOSA, así que la
+# lógica (drenado/ack/reconciliación/idempotencia) se testea en CI x86 con fakes sin
+# broker ni red. El device en el Pi (y la integración real) instala este extra.
+iot = [
+  "paho-mqtt>=1.6",
+]
 
 [tool.setuptools]
 # Layout plano: el paquete importable es `cam_counter_edge`. `tests/` queda fuera.

@@ -39,3 +39,18 @@ Test del camino **sin-tag** de `version.py` (crea un repo git temporal, 1 commit
 ```bash
 python3 -m pytest scripts/test_version.py -q   # o: python3 scripts/test_version.py
 ```
+
+## `provision-device.sh`
+Provisiona la identidad **AWS IoT Core** de un Pi con **un comando** (operador no experto):
+genera **llave+CSR en local** (la llave privada **nunca** viaja a AWS), crea el cert desde
+CSR, crea+vincula el Thing (grupos + `cam-counter-device-policy`), registra el item en
+`cam-counter-devices` (conditional put), descarga la Root CA y empaqueta
+`device-bundle.tar.gz` (certs + `.env` con sólo claves `CAMCOUNTER_*`, **sin** credenciales
+AWS). Materializa **sólo lo por-device** y **fuera del state** de Terraform. Idempotente;
+`--rotate` / `--revoke` para ciclo de vida del cert. Guía completa:
+[`docs/provisioning.md`](../docs/provisioning.md).
+
+```bash
+scripts/provision-device.sh --site casa --device rpi-001 --camera 1 --channel stable
+scripts/provision-device.sh --site casa --device rpi-001 --dry-run   # sin tocar AWS (CI)
+```
