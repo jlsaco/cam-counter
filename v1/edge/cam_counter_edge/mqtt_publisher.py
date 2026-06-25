@@ -516,6 +516,31 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    # WP16 — fail-closed de la identidad mTLS al boot. IoT Core EXIGE mTLS: sin
+    # cert/key/CA el publish nunca conectaría y los eventos se acumularían en silencio.
+    # Abortamos explícitamente (en vez de degradar a "sin clip_key") para que un corte
+    # a modo iot con identidad incompleta sea ruidoso y NO un fallo mudo.
+    cert_path = _env("CAMCOUNTER_IOT_CERT_PATH")
+    key_path = _env("CAMCOUNTER_IOT_KEY_PATH")
+    ca_path = _env("CAMCOUNTER_IOT_ROOT_CA_PATH")
+    missing = [
+        name
+        for name, value in (
+            ("CAMCOUNTER_IOT_CERT_PATH", cert_path),
+            ("CAMCOUNTER_IOT_KEY_PATH", key_path),
+            ("CAMCOUNTER_IOT_ROOT_CA_PATH", ca_path),
+        )
+        if not value or not os.path.isfile(value)
+    ]
+    if missing:
+        _log.error(
+            "mqtt-publisher: identidad mTLS incompleta (faltan o no existen: %s); IoT "
+            "Core exige cert/key/CA. Provisiona el device (scripts/provision-device.sh) "
+            "antes de modo iot.",
+            ", ".join(missing),
+        )
+        return 2
+
     try:
         interval_s = max(2.0, float(_env("CAMCOUNTER_SYNC_INTERVAL_S", "10")))
     except ValueError:
@@ -528,9 +553,9 @@ def main(argv: list[str] | None = None) -> int:
             thing_name=thing_name,
             device_id=device_id,
             endpoint=endpoint,
-            cert_path=_env("CAMCOUNTER_IOT_CERT_PATH"),
-            key_path=_env("CAMCOUNTER_IOT_KEY_PATH"),
-            ca_path=_env("CAMCOUNTER_IOT_ROOT_CA_PATH"),
+            cert_path=cert_path,
+            key_path=key_path,
+            ca_path=ca_path,
             client_factory=default_mqtt_client_factory,
             clip_clients_provider=_build_clip_provider(),
             media_bucket=_env("CAMCOUNTER_MEDIA_BUCKET", "cam-counter-media-950639281773"),
