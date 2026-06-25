@@ -1,0 +1,4 @@
+# Runtime de `cam-counter-fleet-api`. boto3/botocore vienen incluidos en el runtime de AWS
+# Lambda (python3.12), así que NO se empaquetan en el zip: este archivo documenta la dependencia
+# y sirve para `pip install` en entornos de test locales.
+boto3
