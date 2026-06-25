@@ -1,0 +1,16 @@
+# dependencias
+/node_modules
+
+# build de Next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# entorno local (NUNCA commitear .env con valores reales; sólo .env.example se versiona)
+.env
+.env*.local
+
+# logs / OS
+*.log
+.DS_Store

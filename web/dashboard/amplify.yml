@@ -1,0 +1,24 @@
+# Amplify Hosting build spec de la consola de flota (Next.js App Router, SSR).
+#
+# appRoot = web/dashboard (monorepo). El login web real PKCE / callback válido se cablea en WP13;
+# aquí sólo se declara el build. La config pública entra por variables `NEXT_PUBLIC_*` del entorno
+# de Amplify (endpoint de la API de WP11 + IDs del User Pool de Cognito de WP10). CERO secretos AWS.
+version: 1
+applications:
+  - appRoot: web/dashboard
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - "**/*"
+      cache:
+        paths:
+          - node_modules/**/*
+          - .next/cache/**/*

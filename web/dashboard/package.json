@@ -1,0 +1,32 @@
+{
+  "name": "cam-counter-dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Consola web de flota (Next.js App Router + Amplify Auth). READ-ONLY: consume la API de WP11; NUNCA habla DynamoDB/S3 directo.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-amplify/adapter-nextjs": "^1.6.0",
+    "@aws-amplify/ui-react": "^6.9.0",
+    "aws-amplify": "^6.12.0",
+    "next": "14.2.30",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.17.0",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "autoprefixer": "10.4.20",
+    "eslint": "8.57.1",
+    "eslint-config-next": "14.2.30",
+    "postcss": "8.4.49",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.6.3"
+  }
+}
